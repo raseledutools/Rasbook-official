@@ -2,13 +2,26 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, Image, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator,
+  StyleSheet, Alert, ActivityIndicator, Platform,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { uploadToCloudinary } from '../services/cloudinary';
 import { Colors, getAvatar, getDisplayName } from '../utils/theme';
+
+const pickMediaWeb = () =>
+  new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,video/*';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return resolve(null);
+      const uri = URL.createObjectURL(file);
+      resolve({ uri, type: file.type.startsWith('video') ? 'video' : 'image' });
+    };
+    input.click();
+  });
 
 export default function CreatePost({ currentUser }) {
   const [text, setText] = useState('');
@@ -17,9 +30,14 @@ export default function CreatePost({ currentUser }) {
   const [posting, setPosting] = useState(false);
 
   const pickMedia = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
-      quality: 0.8,
+    if (Platform.OS === 'web') {
+      const result = await pickMediaWeb();
+      if (result) { setMedia(result.uri); setMediaType(result.type); }
+      return;
+    }
+    const IP = await import('expo-image-picker');
+    const result = await IP.launchImageLibraryAsync({
+      mediaTypes: IP.MediaTypeOptions.All, quality: 0.8,
     });
     if (!result.canceled) {
       const asset = result.assets[0];
@@ -43,7 +61,7 @@ export default function CreatePost({ currentUser }) {
         createdAt: serverTimestamp(),
       });
       setText(''); setMedia(null); setMediaType(null);
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Failed to post. Try again.');
     } finally {
       setPosting(false);
@@ -55,12 +73,11 @@ export default function CreatePost({ currentUser }) {
       <View style={s.inputRow}>
         <Image source={{ uri: getAvatar(currentUser) }} style={s.avatar} />
         <TextInput
-          style={s.input} placeholder={`What's on your mind, ${getDisplayName(currentUser)}?`}
-          placeholderTextColor="#999" value={text} onChangeText={setText}
-          multiline
+          style={s.input}
+          placeholder={`What's on your mind, ${getDisplayName(currentUser)}?`}
+          placeholderTextColor="#999" value={text} onChangeText={setText} multiline
         />
       </View>
-
       {media && (
         <View style={s.preview}>
           <Image source={{ uri: media }} style={s.previewImg} />
@@ -69,18 +86,16 @@ export default function CreatePost({ currentUser }) {
           </TouchableOpacity>
         </View>
       )}
-
       <View style={s.actions}>
         <TouchableOpacity onPress={pickMedia} style={s.mediaBtn}>
           <Text style={{ color: Colors.green, fontWeight: '600' }}>📸 Photo/Video</Text>
         </TouchableOpacity>
-        {posting ? (
-          <ActivityIndicator color={Colors.primary} />
-        ) : (
-          <TouchableOpacity style={s.postBtn} onPress={handlePost}>
-            <Text style={s.postBtnText}>Post</Text>
-          </TouchableOpacity>
-        )}
+        {posting
+          ? <ActivityIndicator color={Colors.primary} />
+          : <TouchableOpacity style={s.postBtn} onPress={handlePost}>
+              <Text style={s.postBtnText}>Post</Text>
+            </TouchableOpacity>
+        }
       </View>
     </View>
   );

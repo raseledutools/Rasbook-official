@@ -5,7 +5,7 @@ import {
   StyleSheet, Alert, Modal, Animated, Dimensions,
   FlatList, TouchableWithoutFeedback,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { Platform } from 'react-native';
 import {
   collection, addDoc, serverTimestamp, query,
   orderBy, onSnapshot, doc, updateDoc, arrayUnion,
@@ -107,9 +107,22 @@ export default function StoriesBar({ currentUser }) {
   };
 
   const addStory = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All, quality: 0.8,
-    });
+    let result = null;
+    if (Platform.OS === 'web') {
+      result = await new Promise((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file'; input.accept = 'image/*,video/*';
+        input.onchange = (e) => {
+          const f = e.target.files[0];
+          if (!f) return resolve({ canceled: true });
+          resolve({ canceled: false, assets: [{ uri: URL.createObjectURL(f), type: f.type.startsWith('video') ? 'video' : 'image' }] });
+        };
+        input.click();
+      });
+    } else {
+      const IP = await import('expo-image-picker');
+      result = await IP.launchImageLibraryAsync({ mediaTypes: IP.MediaTypeOptions.All, quality: 0.8 });
+    }
     if (result.canceled) return;
     if (!isOnline) return Alert.alert('Offline', 'Story upload করতে internet দরকার');
     try {

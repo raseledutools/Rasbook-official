@@ -2,15 +2,21 @@
 import React, { useState } from 'react';
 import {
   View, Text, Image, TouchableOpacity, TextInput,
-  StyleSheet, Alert, Modal, Pressable,
+  StyleSheet, Alert, Modal, Pressable, Platform,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
 import {
   doc, updateDoc, deleteDoc, arrayUnion, arrayRemove,
   getDoc, addDoc, collection, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { Colors, getAvatar, getDisplayName, timeAgo } from '../utils/theme';
+
+// expo-av crashes on web — lazy load only on native
+const VideoPlayer = Platform.OS !== 'web'
+  ? require('./VideoPlayerNative').default
+  : ({ uri }) => (
+      <video src={uri} controls style={{ width: '100%', height: 300, backgroundColor: '#000' }} />
+    );
 
 export default function PostCard({ post, currentUser }) {
   const [showComments, setShowComments] = useState(false);
@@ -48,8 +54,7 @@ export default function PostCard({ post, currentUser }) {
     const cId = Date.now().toString();
     await updateDoc(postRef, {
       comments: arrayUnion({
-        commentId: cId,
-        userId: currentUser.uid,
+        commentId: cId, userId: currentUser.uid,
         userName: getDisplayName(currentUser),
         userAvatar: getAvatar(currentUser),
         text: commentText.trim(),
@@ -77,19 +82,13 @@ export default function PostCard({ post, currentUser }) {
     ]);
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () =>
     Alert.alert('Delete Post', 'Are you sure?', [
       { text: 'Cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => deleteDoc(postRef) },
     ]);
-  };
 
-  const handleEdit = () => {
-    setEditText(post.text || '');
-    setEditModal(true);
-    setShowMenu(false);
-  };
-
+  const handleEdit = () => { setEditText(post.text || ''); setEditModal(true); setShowMenu(false); };
   const saveEdit = async () => {
     if (editText.trim()) await updateDoc(postRef, { text: editText.trim() });
     setEditModal(false);
@@ -97,7 +96,6 @@ export default function PostCard({ post, currentUser }) {
 
   return (
     <View style={s.card}>
-      {/* Edit Modal */}
       <Modal visible={editModal} transparent animationType="fade">
         <Pressable style={s.modalOverlay} onPress={() => setEditModal(false)}>
           <Pressable style={s.modalBox} onPress={() => {}}>
@@ -119,7 +117,6 @@ export default function PostCard({ post, currentUser }) {
         </Pressable>
       </Modal>
 
-      {/* Header */}
       <View style={s.header}>
         <Image source={{ uri: post.userAvatar || getAvatar({ displayName: post.userName }) }} style={s.avatar} />
         <View style={{ flex: 1 }}>
@@ -145,27 +142,19 @@ export default function PostCard({ post, currentUser }) {
         )}
       </View>
 
-      {/* Body */}
       {!!post.text && <Text style={s.postText}>{post.text}</Text>}
       {post.mediaUrl && post.mediaType === 'image' && (
         <Image source={{ uri: post.mediaUrl }} style={s.media} resizeMode="cover" />
       )}
       {post.mediaUrl && post.mediaType === 'video' && (
-        <Video
-          source={{ uri: post.mediaUrl }}
-          style={s.media}
-          useNativeControls
-          resizeMode={ResizeMode.COVER}
-        />
+        <VideoPlayer uri={post.mediaUrl} />
       )}
 
-      {/* Stats */}
       <View style={s.stats}>
         <Text style={s.statText}>👍 {(post.likes || []).length || ''}</Text>
         <Text style={s.statText}>{(post.comments || []).length} Comments</Text>
       </View>
 
-      {/* Actions */}
       <View style={s.footer}>
         <TouchableOpacity style={s.actionBtn} onPress={handleLike}>
           <Text style={[s.actionText, isLiked && { color: Colors.primary }]}>
@@ -177,7 +166,6 @@ export default function PostCard({ post, currentUser }) {
         </TouchableOpacity>
       </View>
 
-      {/* Comments */}
       {showComments && (
         <View style={s.commentsSection}>
           {(post.comments || []).map((c) => {
