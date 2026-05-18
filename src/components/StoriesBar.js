@@ -61,7 +61,7 @@ export default function StoriesBar({ currentUser }) {
       {/* Dynamic Stories */}
       {stories.map((story) => (
         <TouchableOpacity
-          key={story.id} style={[s.card, { backgroundImage: undefined }]}
+          key={story.id} style={s.card}
           onPress={() => Linking.openURL(story.mediaUrl)}
         >
           <Image source={{ uri: story.mediaUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -79,6 +79,6 @@ const s = StyleSheet.create({
   content: { padding: 12, gap: 10 },
   card: { width: 100, height: 170, borderRadius: 12, backgroundColor: Colors.bgGray, overflow: 'hidden', position: 'relative', borderWidth: 1, borderColor: Colors.border, justifyContent: 'flex-end' },
   storyAvatar: { position: 'absolute', top: 10, left: 10, width: 36, height: 36, borderRadius: 18, borderWidth: 3, borderColor: Colors.primary, zIndex: 2 },
-  overlay: { ...StyleSheet.absoluteFillObject, background: 'transparent', backgroundColor: 'rgba(0,0,0,0.35)' },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)' },
   name: { color: Colors.white, fontWeight: 'bold', fontSize: 12, padding: 8, zIndex: 2, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 3 },
 });

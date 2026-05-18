@@ -1,8 +1,7 @@
-// src/components/PostCard.js
 import React, { useState } from 'react';
 import {
   View, Text, Image, TouchableOpacity, TextInput,
-  StyleSheet, Alert, ScrollView,
+  StyleSheet, Alert, Modal, Pressable,
 } from 'react-native';
 import { Video } from 'expo-av';
 import {
@@ -16,6 +15,8 @@ export default function PostCard({ post, currentUser }) {
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [showMenu, setShowMenu] = useState(false);
+  const [editModal, setEditModal] = useState(false);
+  const [editText, setEditText] = useState(post.text || '');
 
   const postRef = doc(db, 'posts', post.id);
   const isLiked = (post.likes || []).includes(currentUser.uid);
@@ -82,14 +83,41 @@ export default function PostCard({ post, currentUser }) {
     ]);
   };
 
-  const handleEdit = async () => {
-    Alert.prompt('Edit Post', 'Update your post:', async (newText) => {
-      if (newText) await updateDoc(postRef, { text: newText });
-    }, 'plain-text', post.text);
+  const handleEdit = () => {
+    setEditText(post.text || '');
+    setEditModal(true);
+    setShowMenu(false);
+  };
+
+  const saveEdit = async () => {
+    if (editText.trim()) await updateDoc(postRef, { text: editText.trim() });
+    setEditModal(false);
   };
 
   return (
     <View style={s.card}>
+      {/* Edit Modal */}
+      <Modal visible={editModal} transparent animationType="fade">
+        <Pressable style={s.modalOverlay} onPress={() => setEditModal(false)}>
+          <Pressable style={s.modalBox} onPress={() => {}}>
+            <Text style={s.modalTitle}>Edit Post</Text>
+            <TextInput
+              style={s.modalInput} value={editText}
+              onChangeText={setEditText} multiline autoFocus
+              placeholder="Edit your post..." placeholderTextColor="#999"
+            />
+            <View style={s.modalActions}>
+              <TouchableOpacity onPress={() => setEditModal(false)} style={s.modalCancel}>
+                <Text style={{ color: Colors.textMuted }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={saveEdit} style={s.modalSave}>
+                <Text style={{ color: Colors.white, fontWeight: 'bold' }}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Header */}
       <View style={s.header}>
         <Image source={{ uri: post.userAvatar || getAvatar({ displayName: post.userName }) }} style={s.avatar} />
@@ -104,7 +132,7 @@ export default function PostCard({ post, currentUser }) {
             </TouchableOpacity>
             {showMenu && (
               <View style={s.dropdown}>
-                <TouchableOpacity style={s.menuItem} onPress={() => { setShowMenu(false); handleEdit(); }}>
+                <TouchableOpacity style={s.menuItem} onPress={handleEdit}>
                   <Text>✏️ Edit</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={s.menuItem} onPress={() => { setShowMenu(false); handleDelete(); }}>
@@ -183,6 +211,13 @@ export default function PostCard({ post, currentUser }) {
 
 const s = StyleSheet.create({
   card: { backgroundColor: Colors.white, marginBottom: 8 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalBox: { backgroundColor: Colors.white, borderRadius: 12, padding: 20, width: '85%' },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12, color: Colors.black },
+  modalInput: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: 12, fontSize: 15, minHeight: 80, color: '#000', textAlignVertical: 'top' },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 16 },
+  modalCancel: { padding: 10 },
+  modalSave: { backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
   header: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10, position: 'relative' },
   avatar: { width: 42, height: 42, borderRadius: 21 },
   author: { fontWeight: 'bold', fontSize: 15, color: Colors.black },

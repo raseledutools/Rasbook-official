@@ -1,5 +1,5 @@
 // src/screens/SearchScreen.js
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, FlatList, Image,
   StyleSheet, TouchableOpacity,
@@ -7,26 +7,30 @@ import {
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../hooks/useAuth';
-import { Colors } from '../utils/theme';
+import { Colors, getAvatar } from '../utils/theme';
 
 export default function SearchScreen() {
   const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'users'), (snap) => {
+      setAllUsers(snap.docs.map((d) => d.data()));
+    });
+    return unsub;
+  }, []);
 
   const handleSearch = (text) => {
     setQuery(text);
     if (text.length < 2) return setResults([]);
-    onSnapshot(collection(db, 'users'), (snap) => {
-      const filtered = snap.docs
-        .map((d) => d.data())
-        .filter(
-          (u) =>
-            u.uid !== user.uid &&
-            u.displayName?.toLowerCase().includes(text.toLowerCase())
-        );
-      setResults(filtered);
-    });
+    const filtered = allUsers.filter(
+      (u) =>
+        u.uid !== user.uid &&
+        u.displayName?.toLowerCase().includes(text.toLowerCase())
+    );
+    setResults(filtered);
   };
 
   return (
@@ -41,7 +45,7 @@ export default function SearchScreen() {
         keyExtractor={(i) => i.uid}
         renderItem={({ item }) => (
           <TouchableOpacity style={s.item}>
-            <Image source={{ uri: item.photoURL }} style={s.avatar} />
+            <Image source={{ uri: item.photoURL || getAvatar(item) }} style={s.avatar} />
             <Text style={s.name}>{item.displayName}</Text>
           </TouchableOpacity>
         )}
