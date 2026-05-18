@@ -1,51 +1,57 @@
 // src/services/notificationService.js
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { Platform } from 'react-native';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+// expo-notifications does NOT support web — skip entirely on web
+const isNative = Platform.OS !== 'web';
 
 export const registerForPushNotifications = async (uid) => {
-  if (!Device.isDevice) return null;
+  if (!isNative) return null;
 
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
+  try {
+    const Notifications = await import('expo-notifications');
+    const Device = await import('expo-device');
+    const { doc, setDoc } = await import('firebase/firestore');
+    const { db } = await import('./firebase');
 
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
+    if (!Device.default.isDevice) return null;
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') return null;
+
+    const token = (await Notifications.getExpoPushTokenAsync()).data;
+    await setDoc(doc(db, 'users', uid), { expoPushToken: token }, { merge: true });
+    return token;
+  } catch (e) {
+    console.warn('Push notifications unavailable:', e.message);
+    return null;
   }
-
-  if (finalStatus !== 'granted') return null;
-
-  const token = (await Notifications.getExpoPushTokenAsync()).data;
-
-  // Save token to Firestore
-  await setDoc(doc(db, 'users', uid), { expoPushToken: token }, { merge: true });
-
-  return token;
 };
 
-// Send push notification via Expo Push API
 export const sendPushNotification = async (expoPushToken, title, body, data = {}) => {
   if (!expoPushToken) return;
-  const message = {
-    to: expoPushToken,
-    sound: 'default',
-    title,
-    body,
-    data,
-  };
   await fetch('https://exp.host/--/api/v2/push/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(message),
+    body: JSON.stringify({ to: expoPushToken, sound: 'default', title, body, data }),
   });
 };
+
+// Set up notification handler only on native
+if (isNative) {
+  import('expo-notifications').then((N) => {
+    N.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+      }),
+    });
+  }).catch(() => {});
+}

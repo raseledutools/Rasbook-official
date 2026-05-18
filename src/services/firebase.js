@@ -1,7 +1,7 @@
 // src/services/firebase.js
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { Platform } from 'react-native';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDvQjNIgVvKk0qa0WZX25etZH73UmHqtIg",
@@ -13,8 +13,29 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-
-export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// Auth with correct persistence per platform
+let _auth = null;
+
+export const getFirebaseAuth = async () => {
+  if (_auth) return _auth;
+
+  if (Platform.OS === 'web') {
+    // Web: use browserLocalPersistence so login survives refresh
+    const { getAuth, browserLocalPersistence, setPersistence } = await import('firebase/auth');
+    _auth = getAuth(app);
+    await setPersistence(_auth, browserLocalPersistence);
+  } else {
+    // Native (Android/iOS): use AsyncStorage persistence
+    const { initializeAuth, getReactNativePersistence } = await import('firebase/auth');
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    _auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+  }
+
+  return _auth;
+};
 
 export default app;

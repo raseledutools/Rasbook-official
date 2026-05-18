@@ -2,7 +2,7 @@ name: RasBook CI/CD
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -20,18 +20,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Cache node modules
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
-      - run: npm install --legacy-peer-deps
-      - run: npm run lint || true
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Run lint
+        run: npm run lint || true
 
   # ─────────────────────────────────────────
   # 2. Web Build + Deploy to GitHub Pages
@@ -47,20 +46,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Cache node modules
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Build web
+      - name: Build web (static)
         run: npx expo export --platform web
+        env:
+          NODE_ENV: production
 
       - name: Add .nojekyll
         run: touch ./dist/.nojekyll
@@ -73,7 +67,7 @@ jobs:
           publish_branch: gh-pages
 
   # ─────────────────────────────────────────
-  # 3. Android APK
+  # 3. Android APK (EAS)
   # ─────────────────────────────────────────
   build-android:
     name: 🤖 Build Android
@@ -82,46 +76,19 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Cache node modules
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
-      - run: npm install --legacy-peer-deps
-      - uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-      - run: eas build --platform android --profile preview --non-interactive
 
-  # ─────────────────────────────────────────
-  # 4. iOS Simulator
-  # ─────────────────────────────────────────
-  build-ios:
-    name: 🍎 Build iOS
-    runs-on: macos-latest
-    needs: lint
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Cache node modules
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
-      - run: npm install --legacy-peer-deps
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
       - uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
-      - run: eas build --platform ios --profile preview --non-interactive
+
+      - name: Build Android APK
+        run: eas build --platform android --profile preview --non-interactive

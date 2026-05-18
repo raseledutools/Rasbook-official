@@ -28,7 +28,8 @@
     },
     "web": {
       "bundler": "metro",
-      "favicon": "./src/assets/favicon.png"
+      "favicon": "./src/assets/favicon.png",
+      "output": "static"
     },
     "plugins": [
       [

@@ -1,5 +1,5 @@
 // src/screens/LoginScreen.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, Alert, ActivityIndicator,
@@ -9,13 +9,18 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
 } from 'firebase/auth';
-import { auth } from '../services/firebase';
+import { getFirebaseAuth } from '../services/firebase';
 import { Colors } from '../utils/theme';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [auth, setAuth] = useState(null);
+
+  useEffect(() => {
+    getFirebaseAuth().then(setAuth);
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) return Alert.alert('Error', 'Please fill all fields');
@@ -71,7 +76,7 @@ export default function LoginScreen() {
         value={password} onChangeText={setPassword}
       />
 
-      {loading ? (
+      {loading || !auth ? (
         <ActivityIndicator size="large" color={Colors.primary} style={{ marginVertical: 20 }} />
       ) : (
         <>

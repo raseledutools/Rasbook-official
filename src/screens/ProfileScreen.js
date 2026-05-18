@@ -1,5 +1,5 @@
 // src/screens/ProfileScreen.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, Image, TouchableOpacity, TextInput,
   StyleSheet, Alert, ScrollView, ActivityIndicator,
@@ -7,7 +7,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { updateProfile, signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../services/firebase';
+import { getFirebaseAuth, db } from '../services/firebase';
 import { uploadToCloudinary } from '../services/cloudinary';
 import { useAuth } from '../hooks/useAuth';
 import { Colors, getAvatar, getDisplayName } from '../utils/theme';
@@ -17,6 +17,11 @@ export default function ProfileScreen() {
   const [name, setName] = useState(getDisplayName(user));
   const [saving, setSaving] = useState(false);
   const [localAvatar, setLocalAvatar] = useState(null);
+  const [auth, setAuth] = useState(null);
+
+  useEffect(() => {
+    getFirebaseAuth().then(setAuth);
+  }, []);
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -27,6 +32,7 @@ export default function ProfileScreen() {
   };
 
   const handleSave = async () => {
+    if (!auth) return;
     setSaving(true);
     try {
       let photoURL = user.photoURL;
@@ -44,6 +50,7 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = () => {
+    if (!auth) return;
     Alert.alert('Logout', 'Are you sure?', [
       { text: 'Cancel' },
       { text: 'Logout', style: 'destructive', onPress: () => signOut(auth) },
