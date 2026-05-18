@@ -7,6 +7,10 @@ on:
   pull_request:
     branches: [main]
 
+# GitHub Pages-এ পুশ করার জন্য পারমিশন সেট করা হলো
+permissions:
+  contents: write
+
 jobs:
   # ─────────────────────────────────────────
   # 1. Lint & Type Check
@@ -26,7 +30,7 @@ jobs:
         run: npm install --legacy-peer-deps
 
       - name: Run ESLint
-        # || true যুক্ত করা হলো যাতে এরর আসলেও বিল্ড স্কিপ না হয়
+        # || true যুক্ত করা হলো যাতে এরর আসলেও বিল্ড স্কিপ না হয়
         run: npm run lint || true
 
   # ─────────────────────────────────────────
@@ -86,7 +90,7 @@ jobs:
         run: eas build --platform ios --profile preview --non-interactive
 
   # ─────────────────────────────────────────
-  # 4. Web Deploy to Vercel (optional)
+  # 4. Web Deploy to GitHub Pages (Vercel-এর বিকল্প)
   # ─────────────────────────────────────────
   deploy-web:
     name: 🌐 Deploy Web
@@ -107,11 +111,8 @@ jobs:
       - name: Build web
         run: npx expo export --platform web
 
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: dist
-          vercel-args: '--prod'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
