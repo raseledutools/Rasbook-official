@@ -1,19 +1,30 @@
 // src/screens/NotificationsScreen.js
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, FlatList, Image, StyleSheet, ActivityIndicator,
+  View, Text, FlatList, Image, StyleSheet, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import {
-  collection, query, where, orderBy, onSnapshot, limit,
+  collection, query, where, orderBy, onSnapshot, limit, doc, updateDoc,
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../hooks/useAuth';
-import { Colors, timeAgo } from '../utils/theme';
+import { useFriends } from '../hooks/useFriends';
+import { Colors, timeAgo, getAvatar } from '../utils/theme';
+import FriendButton from '../components/FriendButton';
+import OfflineBanner from '../components/OfflineBanner';
+
+const typeLabel = {
+  like: 'liked your post.',
+  comment: 'commented on your post.',
+  friend_request: 'sent you a friend request.',
+  friend_accepted: 'accepted your friend request.',
+};
 
 export default function NotificationsScreen() {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { getFriendStatus } = useFriends();
 
   useEffect(() => {
     const q = query(
@@ -25,6 +36,12 @@ export default function NotificationsScreen() {
     const unsub = onSnapshot(q, (snap) => {
       setNotifications(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setLoading(false);
+      // Mark all as read
+      snap.docs.forEach((d) => {
+        if (!d.data().isRead) {
+          updateDoc(doc(db, 'notifications', d.id), { isRead: true }).catch(() => {});
+        }
+      });
     });
     return unsub;
   }, []);
@@ -32,13 +49,30 @@ export default function NotificationsScreen() {
   if (loading) return <ActivityIndicator style={{ flex: 1 }} color={Colors.primary} />;
 
   const renderItem = ({ item }) => {
-    const action = item.type === 'like' ? 'liked your post.' : 'commented on your post.';
+    const label = typeLabel[item.type] || 'interacted with you.';
+    const isFriendRequest = item.type === 'friend_request';
+    const friendStatus = isFriendRequest ? getFriendStatus(item.fromUserId) : null;
+
     return (
       <View style={[s.item, !item.isRead && s.unread]}>
-        <Image source={{ uri: item.fromUserAvatar }} style={s.avatar} />
+        <Image
+          source={{ uri: item.fromUserAvatar || getAvatar({ uid: item.fromUserId }) }}
+          style={s.avatar}
+        />
         <View style={{ flex: 1 }}>
-          <Text style={s.text}><Text style={{ fontWeight: 'bold' }}>{item.fromUserName}</Text> {action}</Text>
+          <Text style={s.text}>
+            <Text style={{ fontWeight: 'bold' }}>{item.fromUserName}</Text> {label}
+          </Text>
           <Text style={s.time}>{timeAgo(item.createdAt)}</Text>
+          {isFriendRequest && friendStatus && (
+            <View style={{ marginTop: 8 }}>
+              <FriendButton
+                targetUser={{ uid: item.fromUserId, displayName: item.fromUserName, photoURL: item.fromUserAvatar }}
+                status={friendStatus}
+                onStatusChange={() => {}}
+              />
+            </View>
+          )}
         </View>
       </View>
     );
@@ -46,6 +80,8 @@ export default function NotificationsScreen() {
 
   return (
     <View style={s.container}>
+      <OfflineBanner />
+      <Text style={s.header}>Notifications</Text>
       <FlatList
         data={notifications}
         keyExtractor={(i) => i.id}
@@ -58,7 +94,8 @@ export default function NotificationsScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
-  item: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  header: { fontSize: 20, fontWeight: '800', padding: 16, paddingTop: 50, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  item: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
   unread: { backgroundColor: '#e7f0fd' },
   avatar: { width: 46, height: 46, borderRadius: 23 },
   text: { fontSize: 14, color: Colors.black },

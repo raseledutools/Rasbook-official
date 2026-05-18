@@ -1,5 +1,5 @@
 // App.js
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -9,9 +9,16 @@ import { AuthProvider, useAuth } from './src/hooks/useAuth';
 import AppNavigator from './src/navigation/AppNavigator';
 import LoginScreen from './src/screens/LoginScreen';
 import { Colors } from './src/utils/theme';
+import { registerForPushNotifications } from './src/services/notificationService';
 
 function RootApp() {
   const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      registerForPushNotifications(user.uid).catch(() => {});
+    }
+  }, [user]);
 
   if (loading) {
     return (

@@ -9,27 +9,40 @@ import {
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from '../hooks/useAuth';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { setCache, getCache, CACHE_KEYS } from '../utils/cache';
 import { Colors } from '../utils/theme';
 import StoriesBar from '../components/StoriesBar';
 import CreatePost from '../components/CreatePost';
 import PostCard from '../components/PostCard';
+import OfflineBanner from '../components/OfflineBanner';
 
 export default function HomeScreen() {
   const { user } = useAuth();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const isOnline = useNetworkStatus();
 
   useEffect(() => {
+    const loadCached = async () => {
+      const cached = await getCache(CACHE_KEYS.POSTS);
+      if (cached) { setPosts(cached); setLoading(false); }
+    };
+    loadCached();
+
+    if (!isOnline) { setLoading(false); return; }
+
     const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(20));
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setPosts(data);
+      setCache(CACHE_KEYS.POSTS, data);
       setLoading(false);
       setRefreshing(false);
     });
     return unsub;
-  }, []);
+  }, [isOnline]);
 
   const onRefresh = () => setRefreshing(true);
 
@@ -43,6 +56,7 @@ export default function HomeScreen() {
 
   return (
     <View style={s.container}>
+      <OfflineBanner />
       <FlatList
         data={posts}
         keyExtractor={(item) => item.id}
