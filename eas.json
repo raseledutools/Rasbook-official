@@ -1,6 +1,6 @@
 {
   "cli": {
-    "version": ">= 5.9.0"
+    "version": ">= 9.0.0"
   },
   "build": {
     "development": {
@@ -15,16 +15,11 @@
     },
     "production": {
       "android": {
-        "buildType": "aab"
+        "buildType": "apk"
       }
     }
   },
   "submit": {
-    "production": {
-      "android": {
-        "serviceAccountKeyPath": "./pc-api-key.json",
-        "track": "internal"
-      }
-    }
+    "production": {}
   }
 }
