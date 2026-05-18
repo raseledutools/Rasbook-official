@@ -4,27 +4,15 @@
     "slug": "rasbook",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./src/assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./src/assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#1877F2"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.rasbook.app"
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./src/assets/adaptive-icon.png",
-        "backgroundColor": "#1877F2"
-      },
-      "package": "com.rasbook.app",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.rasbook.app"
     },
     "web": {
-      "favicon": "./src/assets/favicon.png",
       "bundler": "webpack"
     },
     "plugins": [
@@ -35,14 +23,7 @@
           "cameraPermission": "RasBook needs access to your camera."
         }
       ],
-      "expo-font",
-      [
-        "expo-notifications",
-        {
-          "icon": "./src/assets/icon.png",
-          "color": "#1877F2"
-        }
-      ]
+      "expo-font"
     ],
     "extra": {
       "eas": {
