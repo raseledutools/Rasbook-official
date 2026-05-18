@@ -1,9 +1,10 @@
+// src/components/PostCard.js
 import React, { useState } from 'react';
 import {
   View, Text, Image, TouchableOpacity, TextInput,
   StyleSheet, Alert, Modal, Pressable,
 } from 'react-native';
-import { Video } from 'expo-av';
+import { Video, ResizeMode } from 'expo-av';
 import {
   doc, updateDoc, deleteDoc, arrayUnion, arrayRemove,
   getDoc, addDoc, collection, serverTimestamp,
@@ -150,7 +151,12 @@ export default function PostCard({ post, currentUser }) {
         <Image source={{ uri: post.mediaUrl }} style={s.media} resizeMode="cover" />
       )}
       {post.mediaUrl && post.mediaType === 'video' && (
-        <Video source={{ uri: post.mediaUrl }} style={s.media} useNativeControls resizeMode="cover" />
+        <Video
+          source={{ uri: post.mediaUrl }}
+          style={s.media}
+          useNativeControls
+          resizeMode={ResizeMode.COVER}
+        />
       )}
 
       {/* Stats */}

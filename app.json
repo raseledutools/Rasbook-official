@@ -5,15 +5,30 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "platforms": ["ios", "android", "web"],
+    "icon": "./src/assets/icon.png",
+    "splash": {
+      "image": "./src/assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.rasbook.app"
+      "bundleIdentifier": "com.rasbook.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
-      "package": "com.rasbook.app"
+      "package": "com.rasbook.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./src/assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
     },
     "web": {
-      "bundler": "webpack"
+      "bundler": "metro",
+      "favicon": "./src/assets/favicon.png"
     },
     "plugins": [
       [
