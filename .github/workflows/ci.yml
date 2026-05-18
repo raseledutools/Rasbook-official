@@ -23,7 +23,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Run ESLint
         run: npm run lint
@@ -44,9 +44,8 @@ jobs:
         with:
           node-version: '20'
           
-
       - name: Install dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Setup Expo & EAS
         uses: expo/expo-github-action@v8
@@ -73,9 +72,8 @@ jobs:
         with:
           node-version: '20'
           
-
       - name: Install dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Setup Expo & EAS
         uses: expo/expo-github-action@v8
@@ -102,9 +100,8 @@ jobs:
         with:
           node-version: '20'
           
-
       - name: Install dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Build web
         run: npx expo export --platform web
