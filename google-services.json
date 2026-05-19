@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "983241676717",
+    "firebase_url": "https://rasbook-5159d-default-rtdb.firebaseio.com",
+    "project_id": "rasbook-5159d",
+    "storage_bucket": "rasbook-5159d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:983241676717:android:c143eba5ceefec50517324",
+        "android_client_info": {
+          "package_name": "com.rasbook.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "983241676717-vlvkt72jel22k4p4bfbaihicfboa823v.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCpbg1IUz2WoeNOggrMiFKWL4_277RIlMI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "983241676717-vlvkt72jel22k4p4bfbaihicfboa823v.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

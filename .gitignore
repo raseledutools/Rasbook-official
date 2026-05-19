@@ -11,6 +11,6 @@ web-build/
 *.orig.*
 web-build/
 .env
-google-services.json
-GoogleService-Info.plist
+# google-services.json — tracked by git for EAS build
+# GoogleService-Info.plist
 pc-api-key.json
