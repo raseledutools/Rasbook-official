@@ -5,7 +5,11 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "platforms": ["ios", "android", "web"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "icon": "./src/assets/icon.png",
     "splash": {
       "image": "./src/assets/splash.png",
@@ -16,15 +20,37 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.rasbook.app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "RasBook needs your camera to make video calls.",
+        "NSMicrophoneUsageDescription": "RasBook needs your microphone to make voice and video calls."
+      },
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "package": "com.rasbook.app",
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.WAKE_LOCK",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.BIND_TELECOM_CONNECTION_SERVICE",
+        "android.permission.CALL_PHONE",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.READ_PHONE_NUMBERS",
+        "android.permission.MANAGE_OWN_CALLS"
+      ],
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",
@@ -36,15 +62,47 @@
         "expo-image-picker",
         {
           "photosPermission": "RasBook needs access to your photos.",
-          "cameraPermission": "RasBook needs access to your camera."
+          "cameraPermission": "RasBook needs access to your camera for video calls."
         }
       ],
-      "expo-font"
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "RasBook needs your camera to make video calls.",
+          "microphonePermission": "RasBook needs your microphone to make voice and video calls.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "RasBook needs your microphone to make voice and video calls."
+        }
+      ],
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./src/assets/icon.png",
+          "color": "#1877F2",
+          "sounds": [],
+          "androidMode": "default",
+          "androidCollapsedTitle": "RasBook"
+        }
+      ],
+      "@react-native-firebase/app",
+      [
+        "@react-native-firebase/messaging",
+        {
+          "autoInitEnabled": true
+        }
+      ]
     ],
     "extra": {
       "eas": {
         "projectId": "6fc3963c-2dd9-44b0-b1ae-c50e86d00fdf"
-      }
+      },
+      "firebaseProjectId": "rasbook-5159d"
     },
     "experiments": {
       "baseUrl": "/Rasbook-official"

@@ -1,8 +1,8 @@
 // src/screens/MessengerScreen.js — Fixed: real name, mic permission, smooth UI
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, ScrollView, TouchableOpacity,
-  StyleSheet, Image, Alert, Modal, KeyboardAvoidingView,
+  StyleSheet, Image, Alert, Modal, KeyboardAvoidingView, Animated,
   Platform, Dimensions, ActivityIndicator, SafeAreaView,
 } from 'react-native';
 import {
@@ -13,11 +13,11 @@ import { db, getFirebaseAuth } from '../services/firebase';
 import { useAuth } from '../hooks/useAuth';
 import { Colors } from '../utils/theme';
 import { FontAwesome6 } from '@expo/vector-icons';
-import { sendPushNotification } from '../services/notificationService';
+import { sendPushNotification, sendCallNotification } from '../services/notificationService';
 
-// ✅ Fix: Expo-based mic/camera permission (replaces navigator.mediaDevices)
+// Mic + Camera permission using expo-av and expo-camera
 const requestMediaPermission = async (type = 'audio') => {
-  if (Platform.OS === 'web') return true; // web handles its own permission
+  if (Platform.OS === 'web') return true; // web handles its own permission dialog
   try {
     if (type === 'audio' || type === 'video') {
       const { Audio } = await import('expo-av');
@@ -77,6 +77,22 @@ export default function MessengerScreen() {
   const localStream = useRef(null);
   const callIdRef = useRef(null);
   const remoteDescSet = useRef(false);
+  const ringSound = useRef(null); // ringtone sound object
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Pulse animation for incoming call avatar
+  useEffect(() => {
+    if (callVisible) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.15, duration: 700, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    }
+  }, [callVisible]);
 
   // ✅ Fix: Get real display name (not email)
   const myUid = user?.uid;
@@ -127,6 +143,7 @@ export default function MessengerScreen() {
             setCallType(data.type);
             setCallStatus('Incoming call…');
             setCallVisible(true);
+            startRing(true); // 🔔 incoming ringtone
           }
           if (data.status === 'ended' && callIdRef.current === id) {
             resetCallUI();
@@ -231,6 +248,7 @@ export default function MessengerScreen() {
     setCallType(type);
     setCallStatus('Calling…');
     setCallVisible(true);
+    startRing(false); // 🔔 outgoing ring tone
 
     try {
       let stream;
@@ -271,16 +289,14 @@ export default function MessengerScreen() {
         type, status: 'calling', ts: Date.now(),
       });
 
-      // Push notification to callee (ফোনে incoming call notification)
+      // Full-screen call notification — CallKeep দিয়ে native call screen দেখাবে
       getDoc(doc(db, 'users', activeContact.uid)).then((snap) => {
-        const token = snap?.data()?.expoPushToken;
-        const callLabel = type === 'video' ? 'Video Call' : 'Voice Call';
-        if (token) sendPushNotification(
-          token,
-          `${myName} is calling you`,
-          `Incoming ${callLabel}`,
-          { type: 'call', callType: type, fromUid: myUid, callId: callDoc.id }
-        );
+        const data = snap?.data() || {};
+        const tokens = {
+          expoPushToken: data.expoPushToken,
+          fcmToken: data.fcmToken,
+        };
+        sendCallNotification(tokens, myName, type, callDoc.id);
       }).catch(() => {});
 
       // In-app notification → Notification Centre এ দেখাবে
@@ -300,6 +316,7 @@ export default function MessengerScreen() {
         if (pc && !remoteDescSet.current && data?.answer) {
           await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
           remoteDescSet.current = true;
+          stopRing(); // stop ring when connected
           setCallStatus('Connected ✓');
         }
       });
@@ -311,6 +328,7 @@ export default function MessengerScreen() {
 
   const answerCall = async () => {
     if (!incomingCall) return;
+    stopRing(); // stop ring when answered
     const granted = await requestMediaPermission(incomingCall.type);
     if (!granted) {
       Alert.alert('Permission Required', 'Microphone/Camera access denied.');
@@ -357,7 +375,42 @@ export default function MessengerScreen() {
     resetCallUI();
   };
 
+  // ── Ringtone helpers ─────────────────────────────────────────────────────────
+  const startRing = async (isIncoming = false) => {
+    try {
+      const { Audio } = await import('expo-av');
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: false,
+        staysActiveInBackground: true,
+      });
+      // Use a free ringtone URL — classic phone ring sound
+      const ringUrl = isIncoming
+        ? 'https://actions.google.com/sounds/v1/phones/phone_alerts_and_rings.ogg'
+        : 'https://actions.google.com/sounds/v1/phones/phone_alerts_and_rings.ogg';
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: ringUrl },
+        { shouldPlay: true, isLooping: true, volume: 1.0 }
+      );
+      ringSound.current = sound;
+    } catch (e) {
+      // ringtone failure is non-critical
+    }
+  };
+
+  const stopRing = async () => {
+    if (ringSound.current) {
+      try {
+        await ringSound.current.stopAsync();
+        await ringSound.current.unloadAsync();
+      } catch (e) {}
+      ringSound.current = null;
+    }
+  };
+
   const resetCallUI = () => {
+    stopRing();
     setCallVisible(false);
     setIncomingCall(null);
     callIdRef.current = null;
@@ -557,14 +610,23 @@ export default function MessengerScreen() {
       {/* ── CALL MODAL ─────────────────────────────────────────────── */}
       <Modal visible={callVisible} animationType="slide" transparent>
         <View style={s.callBg}>
-          <Image
+          {/* Pulse rings behind avatar */}
+          <Animated.View style={[s.pulseRing, s.pulseRing3, { transform: [{ scale: pulseAnim }], opacity: 0.15 }]} />
+          <Animated.View style={[s.pulseRing, s.pulseRing2, { transform: [{ scale: pulseAnim }], opacity: 0.25 }]} />
+          <Animated.View style={[s.pulseRing, { transform: [{ scale: pulseAnim }], opacity: 0.4 }]} />
+          <Animated.Image
             source={avatarUri(
               incomingCall ? incomingCall.callerName || 'Caller' : activeContact?.name,
               incomingCall ? null : activeContact?.photoURL
             )}
-            style={s.callAvatar}
+            style={[s.callAvatar, { transform: [{ scale: pulseAnim }] }]}
           />
-          <Text style={s.callName}>{incomingCall ? 'Incoming call' : activeContact?.name}</Text>
+          <Text style={s.callName}>
+            {incomingCall ? incomingCall.callerName || 'Incoming Call' : activeContact?.name}
+          </Text>
+          <Text style={s.callType}>
+            {callType === 'video' ? '📹 Video Call' : '📞 Voice Call'}
+          </Text>
           <Text style={s.callStatus}>{callStatus}</Text>
 
           <View style={s.callBtns}>
@@ -676,7 +738,11 @@ const s = StyleSheet.create({
   noChatSub: { fontSize: 15, color: Colors.textMuted },
 
   callBg: { flex: 1, backgroundColor: '#1c1e2f', justifyContent: 'center', alignItems: 'center' },
-  callAvatar: { width: 140, height: 140, borderRadius: 70, borderWidth: 4, borderColor: Colors.primary, marginBottom: 20 },
+  callAvatar: { width: 140, height: 140, borderRadius: 70, borderWidth: 4, borderColor: Colors.primary, marginBottom: 20, zIndex: 2 },
+  pulseRing: { position: 'absolute', width: 160, height: 160, borderRadius: 80, backgroundColor: Colors.primary, zIndex: 1 },
+  pulseRing2: { width: 190, height: 190, borderRadius: 95 },
+  pulseRing3: { width: 220, height: 220, borderRadius: 110 },
+  callType: { fontSize: 14, color: 'rgba(255,255,255,0.7)', marginTop: 4, marginBottom: 4, letterSpacing: 0.5 },
   callName: { fontSize: 28, fontWeight: '700', color: '#fff' },
   callStatus: { fontSize: 16, color: Colors.primary, marginTop: 8, marginBottom: 50 },
   callBtns: { flexDirection: 'row', gap: 24 },
