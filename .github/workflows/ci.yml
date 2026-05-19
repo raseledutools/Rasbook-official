@@ -65,10 +65,10 @@ jobs:
           publish_branch: gh-pages
 
   # ─────────────────────────────────────────
-  # 3. Android APK (EAS)
+  # 3. Android APK (EAS) + Upload as Release
   # ─────────────────────────────────────────
   build-android:
-    name: 🤖 Build Android
+    name: 🤖 Build Android APK
     runs-on: ubuntu-latest
     needs: lint
     if: github.ref == 'refs/heads/main'
@@ -87,5 +87,27 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build Android APK
-        run: eas build --platform android --profile preview --non-interactive
+      - name: Build Android APK (EAS)
+        id: eas_build
+        run: |
+          BUILD_URL=$(eas build --platform android --profile preview --non-interactive --json | python3 -c "import sys,json; data=json.load(sys.stdin); print(data[0]['artifacts']['buildUrl'] if isinstance(data,list) else data.get('artifacts',{}).get('buildUrl',''))" 2>/dev/null || echo "")
+          echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
+
+      - name: Download APK from EAS
+        if: steps.eas_build.outputs.build_url != ''
+        run: |
+          curl -L "${{ steps.eas_build.outputs.build_url }}" -o rasbook.apk
+
+      - name: Upload APK as GitHub Release
+        if: steps.eas_build.outputs.build_url != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "RasBook APK — Build #${{ github.run_number }}"
+          body: |
+            ## 📱 RasBook Android APK
+            Auto-built from commit `${{ github.sha }}`
+            
+            **Download করো:** নিচের `rasbook.apk` file-এ click করো।
+          files: rasbook.apk
+          token: ${{ secrets.GITHUB_TOKEN }}

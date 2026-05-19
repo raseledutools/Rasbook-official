@@ -50,7 +50,10 @@
         "android.permission.READ_PHONE_NUMBERS",
         "android.permission.MANAGE_OWN_CALLS"
       ],
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "compileSdkVersion": 34,
+      "targetSdkVersion": 34,
+      "minSdkVersion": 24
     },
     "web": {
       "bundler": "metro",

@@ -24,7 +24,7 @@ export const registerForPushNotifications = async (uid) => {
 
     const token = (await Notifications.getExpoPushTokenAsync()).data;
 
-    // Also get FCM token for direct FCM sends (callkeep)
+    // FCM token — app killed state-এ call notification-এর জন্য দরকার
     let fcmToken = null;
     try {
       const messaging = await import('@react-native-firebase/messaging');
@@ -44,6 +44,7 @@ export const registerForPushNotifications = async (uid) => {
 };
 
 // ── Regular push notification (message, like, comment) ──────────────────────
+// App open/background-এ কাজ করে
 export const sendPushNotification = async (expoPushToken, title, body, data = {}) => {
   if (!expoPushToken) return;
   await fetch('https://exp.host/--/api/v2/push/send', {
@@ -53,35 +54,48 @@ export const sendPushNotification = async (expoPushToken, title, body, data = {}
   });
 };
 
-// ── Call notification — FCM data-only (wakes killed app via CallKeep) ────────
-// FCM data-only message → background handler জাগে → CallKeep full-screen দেখায়
-export const sendCallNotification = async (tokens, callerName, callType, callId) => {
-  const { expoPushToken, fcmToken } = tokens || {};
+// ── Call notification — Firebase Function দিয়ে FCM high-priority ─────────────
+// App killed থাকলেও এটা কাজ করে
+// Firestore trigger (onCallCreated) থাকলে এই function call নাও করলেও চলে।
+// কিন্তু double-safety হিসেবে রাখা হলো।
+export const sendCallNotification = async (calleeUid, callerName, callType, callId) => {
+  if (!calleeUid) return;
+  try {
+    const { getFunctions, httpsCallable } = await import('firebase/functions');
+    const { app } = await import('./firebase');
 
-  // Method 1: FCM direct (app killed হলেও কাজ করে — CallKeep trigger)
-  // Note: এটার জন্য Firebase Admin SDK লাগে server-side।
-  // Client-side থেকে সরাসরি FCM পাঠানো যায় না (security)।
-  // তাই Expo Push API দিয়ে high-priority পাঠাচ্ছি।
+    const functions = getFunctions(app);
+    const sendCall = httpsCallable(functions, 'sendCallNotification');
 
-  if (expoPushToken) {
-    await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: expoPushToken,
-        title: `📞 ${callerName}`,
-        body: callType === 'video' ? 'Incoming Video Call' : 'Incoming Voice Call',
-        sound: 'default',
-        priority: 'high',
-        channelId: 'incoming-call',
-        data: {
-          type: 'incoming_call',
-          callType,
-          callerName,
-          callId,
-        },
-      }),
-    });
+    await sendCall({ calleeUid, callerName, callType, callId });
+    console.log('Call notification sent via Firebase Function');
+  } catch (e) {
+    console.warn('sendCallNotification error:', e.message);
+
+    // Fallback: Expo Push (app open/background-এ কাজ করবে)
+    try {
+      const { doc, getDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase');
+      const userDoc = await getDoc(doc(db, 'users', calleeUid));
+      const expoPushToken = userDoc.data()?.expoPushToken;
+      if (expoPushToken) {
+        await fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: expoPushToken,
+            title: `📞 ${callerName}`,
+            body: callType === 'video' ? 'Incoming Video Call' : 'Incoming Voice Call',
+            sound: 'default',
+            priority: 'high',
+            channelId: 'incoming-call',
+            data: { type: 'incoming_call', callType, callerName, callId },
+          }),
+        });
+      }
+    } catch (fallbackErr) {
+      console.warn('Fallback notification also failed:', fallbackErr.message);
+    }
   }
 };
 
