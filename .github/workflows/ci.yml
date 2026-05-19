@@ -12,9 +12,6 @@ permissions:
   id-token: write
 
 jobs:
-  # ─────────────────────────────────────────
-  # 1. Lint
-  # ─────────────────────────────────────────
   lint:
     name: 🔍 Lint
     runs-on: ubuntu-latest
@@ -23,15 +20,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm' # স্পিড বাড়ানোর জন্য ক্যাশ অন করা হলো
+          cache: 'npm'
       - name: Install dependencies
         run: npm install --legacy-peer-deps
       - name: Run lint
         run: npm run lint || true
 
-  # ─────────────────────────────────────────
-  # 2. Web Build + Deploy to GitHub Pages
-  # ─────────────────────────────────────────
   deploy-web:
     name: 🌐 Deploy Web
     runs-on: ubuntu-latest
@@ -49,8 +43,6 @@ jobs:
         run: npx expo export --platform web
         env:
           NODE_ENV: production
-      - name: Add .nojekyll
-        run: touch ./dist/.nojekyll
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -58,9 +50,6 @@ jobs:
           publish_dir: ./dist
           publish_branch: gh-pages
 
-  # ─────────────────────────────────────────
-  # 3. Android APK → GitHub Releases (SUPER FAST LOCAL MODE)
-  # ─────────────────────────────────────────
   build-android:
     name: 🤖 Build Android APK
     runs-on: ubuntu-latest
@@ -68,23 +57,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-
-      # লোকাল অ্যান্ড্রয়েড বিল্ডের জন্য জাভা সেটআপ
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      # ⚡ গ্রেডল বিল্ড সুপার ফাস্ট করার জন্য অটোমেটিক ক্যাশ সেটআপ
-      - name: Setup Gradle Cache
-        uses: gradle/actions/setup-gradle@v3
-
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
@@ -93,52 +69,49 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      # ⚡ এক্সপো সার্ভারের কিউ এড়াতে সরাসরি গিটহাব রানারেই APK বিল্ড করো (সুপার ফাস্ট মোড)
-      - name: Build APK Locally on GitHub Runner
+      # EAS বিল্ড রিমোটলি রান করা হবে কিন্তু --wait কমান্ডের মাধ্যমে বিল্ড শেষ হওয়া পর্যন্ত অপেক্ষা করবে
+      - name: Build APK on EAS
         run: |
-          eas build \
-            --local \
-            --platform android \
-            --profile preview \
-            --non-interactive
+          eas build --platform android --profile preview --non-interactive --wait --json > build_output.json
+          cat build_output.json
 
-      # জেনারেট হওয়া APK ফাইলটি খুঁজে বের করা এবং রিনেম করা
-      - name: Locate and Prepare APK File
+      # Build output থেকে APK URL বের করা
+      - name: Extract APK URL
+        id: apk_url
         run: |
-          APK_PATH=$(find . -name "*.apk" | head -n 1)
-          if [ -n "$APK_PATH" ]; then
-            cp "$APK_PATH" ./rasbook.apk
-            echo "APK successfully located and copied."
-          else
-            echo "Error: APK generation failed!"
-            exit 1
-          fi
+          URL=$(python3 -c "
+          import json, sys
+          try:
+              data = json.load(open('build_output.json'))
+              # আউটপুট যদি লিস্ট হয় তবে প্রথমটা, নাহলে পুরোটা
+              build_data = data[0] if isinstance(data, list) else data
+              print(build_data.get('artifacts', [{}])[0].get('buildUrl', ''))
+          except:
+              print('')
+          ")
+          echo "url=$URL" >> $GITHUB_OUTPUT
 
-      # 🔑 তৈরি হওয়া আসল APK থেকে সরাসরি SHA-1 প্রিন্ট করো (ফায়ারবেস সেটআপের জন্য)
+      # APK ডাউনলোড করা
+      - name: Download APK
+        if: steps.apk_url.outputs.url != ''
+        run: |
+          curl -L "${{ steps.apk_url.outputs.url }}" -o rasbook.apk
+
+      # SHA-1 বের করা (ডাউনলোড করা APK ফাইল থেকে)
       - name: Print REAL APK SHA-1
+        if: steps.apk_url.outputs.url != ''
         run: |
-          echo "=========================================="
-          echo "          REAL APK SHA-1                  "
-          echo "=========================================="
-          keytool -printcert -jarfile rasbook.apk | grep "SHA1:" || true
-          echo "=========================================="
+          echo "=== APK SHA-1 (Firebase-এর জন্য এটি কপি করুন) ==="
+          keytool -printcert -jarfile rasbook.apk | grep "SHA1:"
+          echo "==============================================="
         continue-on-error: true
 
-      # GitHub Release তৈরি করো এবং সরাসরি APK ফাইলটি অ্যাটাচ করে দাও
-      - name: Create GitHub Release with APK
+      # GitHub Release তৈরি ও APK অ্যাটাচ করা
+      - name: Create GitHub Release
+        if: steps.apk_url.outputs.url != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: "📱 RasBook APK — Build #${{ github.run_number }}"
-          draft: false
-          prerelease: false
-          body: |
-            ## RasBook Android APK (Super Fast Build)
-
-            **Commit:** `${{ github.sha }}`
-            **Branch:** `${{ github.ref_name }}`
-
-            ### ⬇️ Download
-            নিচের `rasbook.apk` ফাইলে ক্লিক করে সরাসরি ডাউনলোড করে ফোনে ইনস্টল করুন।
           files: rasbook.apk
           token: ${{ secrets.GITHUB_TOKEN }}
