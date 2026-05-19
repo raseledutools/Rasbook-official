@@ -20,14 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Install dependencies
         run: npm install --legacy-peer-deps
-
       - name: Run lint
         run: npm run lint || true
 
@@ -41,22 +38,17 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Install dependencies
         run: npm install --legacy-peer-deps
-
-      - name: Build web (static)
+      - name: Build web
         run: npx expo export --platform web
         env:
           NODE_ENV: production
-
       - name: Add .nojekyll
         run: touch ./dist/.nojekyll
-
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -65,7 +57,7 @@ jobs:
           publish_branch: gh-pages
 
   # ─────────────────────────────────────────
-  # 3. Android APK (EAS) + Upload as Release
+  # 3. Android APK → GitHub Releases
   # ─────────────────────────────────────────
   build-android:
     name: 🤖 Build Android APK
@@ -87,27 +79,58 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build Android APK (EAS)
-        id: eas_build
+      # EAS-এ build submit করো এবং শেষ হওয়া পর্যন্ত wait করো
+      - name: Build APK on EAS (wait for completion)
         run: |
-          BUILD_URL=$(eas build --platform android --profile preview --non-interactive --json | python3 -c "import sys,json; data=json.load(sys.stdin); print(data[0]['artifacts']['buildUrl'] if isinstance(data,list) else data.get('artifacts',{}).get('buildUrl',''))" 2>/dev/null || echo "")
-          echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
+          eas build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --wait \
+            --json > build_output.json
+          cat build_output.json
 
-      - name: Download APK from EAS
-        if: steps.eas_build.outputs.build_url != ''
+      # Build output থেকে APK URL বের করো
+      - name: Extract APK URL
+        id: apk_url
         run: |
-          curl -L "${{ steps.eas_build.outputs.build_url }}" -o rasbook.apk
+          URL=$(python3 -c "
+          import json, sys
+          data = json.load(open('build_output.json'))
+          if isinstance(data, list):
+              print(data[0].get('artifacts', {}).get('buildUrl', ''))
+          else:
+              print(data.get('artifacts', {}).get('buildUrl', ''))
+          ")
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "APK URL: $URL"
 
-      - name: Upload APK as GitHub Release
-        if: steps.eas_build.outputs.build_url != ''
+      # APK download করো
+      - name: Download APK
+        if: steps.apk_url.outputs.url != ''
+        run: |
+          curl -L "${{ steps.apk_url.outputs.url }}" -o rasbook.apk
+          ls -lh rasbook.apk
+
+      # GitHub Release বানাও এবং APK attach করো
+      - name: Create GitHub Release with APK
+        if: steps.apk_url.outputs.url != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: "RasBook APK — Build #${{ github.run_number }}"
+          tag_name: v${{ github.run_number }}
+          name: "📱 RasBook APK — Build #${{ github.run_number }}"
           body: |
-            ## 📱 RasBook Android APK
-            Auto-built from commit `${{ github.sha }}`
-            
-            **Download করো:** নিচের `rasbook.apk` file-এ click করো।
+            ## RasBook Android APK
+
+            **Commit:** `${{ github.sha }}`
+            **Branch:** `${{ github.ref_name }}`
+
+            ### ⬇️ Download
+            নিচের `rasbook.apk` file-এ click করে download করো।
+
+            ### Install করতে
+            1. APK download করো
+            2. ফোনে Settings → Unknown Sources → Allow
+            3. APK install করো
           files: rasbook.apk
           token: ${{ secrets.GITHUB_TOKEN }}

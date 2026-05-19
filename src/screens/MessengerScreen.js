@@ -18,23 +18,6 @@ import { Colors } from '../utils/theme';
 import { FontAwesome6 } from '@expo/vector-icons';
 import { sendPushNotification, sendCallNotification } from '../services/notificationService';
 
-// ── Native WebRTC (Android / iOS) ───────────────────────────────────────────
-let getNativeUserMedia = null;
-let NativeRTCPeerConnection = null;
-let NativeRTCIceCandidate = null;
-let NativeRTCSessionDescription = null;
-if (Platform.OS !== 'web') {
-  try {
-    const RNWebRTC = require('react-native-webrtc');
-    NativeRTCPeerConnection     = RNWebRTC.RTCPeerConnection;
-    NativeRTCIceCandidate       = RNWebRTC.RTCIceCandidate;
-    NativeRTCSessionDescription = RNWebRTC.RTCSessionDescription;
-    getNativeUserMedia          = RNWebRTC.mediaDevices.getUserMedia.bind(RNWebRTC.mediaDevices);
-  } catch (e) {
-    console.warn('react-native-webrtc not available:', e.message);
-  }
-}
-
 const CHAT_NS = 'rasbook-messenger-v1';
 const { width: SCREEN_W } = Dimensions.get('window');
 const IS_TABLET = SCREEN_W > 768;
@@ -166,9 +149,7 @@ export default function MessengerScreen() {
     remoteDescSetRef.current = false;
     iceCandQueueRef.current = [];
 
-    const PeerConnection = Platform.OS !== 'web' ? NativeRTCPeerConnection : RTCPeerConnection;
-    if (!PeerConnection) { console.warn('RTCPeerConnection not available'); return null; }
-    const pc = new PeerConnection(RTC_SERVERS);
+    const pc = new RTCPeerConnection(RTC_SERVERS);
 
     if (Platform.OS === 'web') {
       // Create fresh MediaStream for remote tracks — exact same as webrtc_core.js
@@ -208,8 +189,7 @@ export default function MessengerScreen() {
   // ── processIceCandidate — queue if remote desc not set yet (exact webrtc_core.js logic)
   const processIceCandidate = async (candidateData) => {
     if (remoteDescSetRef.current && pcRef.current) {
-      const IceCandidate = Platform.OS !== 'web' ? NativeRTCIceCandidate : RTCIceCandidate;
-      await pcRef.current.addIceCandidate(new IceCandidate(candidateData)).catch(() => {});
+      await pcRef.current.addIceCandidate(new RTCIceCandidate(candidateData)).catch(() => {});
     } else {
       iceCandQueueRef.current.push(candidateData);
     }
@@ -217,8 +197,7 @@ export default function MessengerScreen() {
 
   const flushIceQueue = async () => {
     for (const cand of iceCandQueueRef.current) {
-      const IceCandidate = Platform.OS !== 'web' ? NativeRTCIceCandidate : RTCIceCandidate;
-      await pcRef.current?.addIceCandidate(new IceCandidate(cand)).catch(() => {});
+      await pcRef.current?.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
     }
     iceCandQueueRef.current = [];
   };
@@ -328,39 +307,21 @@ export default function MessengerScreen() {
     }).catch(() => {});
   };
 
-  // ── getMediaStream — web + native (react-native-webrtc)
+  // ── getMediaStream with fallback (mirrors webrtc_core.js)
   const getMediaStream = async (type) => {
-    const constraints = {
-      audio: true,
-      video: type === 'video' ? { facingMode: 'user', width: 640, height: 480 } : false,
-    };
-
     if (Platform.OS !== 'web') {
-      // Native: react-native-webrtc
-      if (!getNativeUserMedia) {
-        Alert.alert('Error', 'react-native-webrtc is not installed. Run: npm install react-native-webrtc');
-        return null;
-      }
-      try {
-        return await getNativeUserMedia(constraints);
-      } catch (err) {
-        console.warn('Native camera failed, trying audio only:', err.message);
-        try {
-          return await getNativeUserMedia({ audio: true, video: false });
-        } catch (e) {
-          Alert.alert('Permission Denied', 'Microphone access is required for calls.');
-          return null;
-        }
-      }
+      Alert.alert('Info', 'Calling works fully on web. Native requires react-native-webrtc.');
+      return null;
     }
-
-    // Web: standard browser API
+    let constraints = { audio: true };
+    if (type === 'video') constraints.video = { facingMode: 'user' };
     try {
       return await navigator.mediaDevices.getUserMedia(constraints);
     } catch (err) {
-      console.warn('Web camera failed, fallback to audio only:', err.message);
+      // Camera fallback — mirrors webrtc_core.js
+      console.warn('Camera failed, fallback to audio only.', err);
       try {
-        return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        return await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch (e) {
         Alert.alert('Permission Denied', 'Microphone access is required for calls.');
         return null;
@@ -416,8 +377,11 @@ export default function MessengerScreen() {
       type, status: 'calling', timestamp: Date.now(),
     });
 
-    // Push notification — Firebase Function দিয়ে FCM high-priority (app killed-এও কাজ করে)
-    sendCallNotification(activeContact.uid, myName, type, callDocId);
+    // Push notification
+    getDoc(doc(db, 'users', activeContact.uid)).then((snap) => {
+      const data = snap?.data() || {};
+      sendCallNotification({ expoPushToken: data.expoPushToken, fcmToken: data.fcmToken }, myName, type, callDocId);
+    }).catch(() => {});
 
     addDoc(collection(db, 'notifications'), {
       toUserId: activeContact.uid, fromUserId: myUid, fromUserName: myName,

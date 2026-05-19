@@ -11,22 +11,16 @@
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleRelease",
-        "image": "ubuntu-22.04-jdk-17-ndk-r25c"
+        "buildType": "apk"
       },
       "ios": {
         "simulator": true
-      },
-      "node": "20.11.0"
+      }
     },
     "production": {
       "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleRelease",
-        "image": "ubuntu-22.04-jdk-17-ndk-r25c"
-      },
-      "node": "20.11.0"
+        "buildType": "apk"
+      }
     }
   },
   "submit": {
