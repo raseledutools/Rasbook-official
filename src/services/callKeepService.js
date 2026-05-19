@@ -1,7 +1,14 @@
 // src/services/callKeepService.js
 // WhatsApp-style incoming call — works even when app is killed
 import { Platform } from 'react-native';
-import uuid from 'react-native-uuid'; // expo includes this
+// uuid — built-in, no package needed
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+};
 
 const isNative = Platform.OS !== 'web';
 
@@ -49,7 +56,7 @@ export const setupCallKeep = async () => {
 // ── Show incoming call screen (full-screen, even if app is killed) ───────────
 export const showIncomingCall = (callerName, callId, isVideo = false) => {
   if (!callKeepReady || !RNCallKeep) return;
-  const callUUID = callId || uuid.v4();
+  const callUUID = callId || generateUUID();
   RNCallKeep.displayIncomingCall(callUUID, callerName, callerName, 'generic', isVideo);
   return callUUID;
 };
