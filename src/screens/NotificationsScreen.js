@@ -18,6 +18,17 @@ const typeLabel = {
   comment: 'commented on your post.',
   friend_request: 'sent you a friend request.',
   friend_accepted: 'accepted your friend request.',
+  message: 'sent you a message.',
+  call: 'called you.',
+};
+
+const typeIcon = {
+  like: '❤️',
+  comment: '💬',
+  friend_request: '👤',
+  friend_accepted: '✅',
+  message: '✉️',
+  call: '📞',
 };
 
 export default function NotificationsScreen() {
@@ -50,7 +61,10 @@ export default function NotificationsScreen() {
 
   const renderItem = ({ item }) => {
     const label = typeLabel[item.type] || 'interacted with you.';
+    const icon = typeIcon[item.type] || '🔔';
     const isFriendRequest = item.type === 'friend_request';
+    const isMessage = item.type === 'message';
+    const isCall = item.type === 'call';
     const friendStatus = isFriendRequest ? getFriendStatus(item.fromUserId) : null;
 
     return (
@@ -61,8 +75,11 @@ export default function NotificationsScreen() {
         />
         <View style={{ flex: 1 }}>
           <Text style={s.text}>
-            <Text style={{ fontWeight: 'bold' }}>{item.fromUserName}</Text> {label}
+            <Text style={{ fontWeight: 'bold' }}>{icon} {item.fromUserName}</Text> {isCall && item.callType === 'video' ? 'video called you.' : label}
           </Text>
+          {isMessage && item.message && (
+            <Text style={s.preview}>"{item.message}"</Text>
+          )}
           <Text style={s.time}>{timeAgo(item.createdAt)}</Text>
           {isFriendRequest && friendStatus && (
             <View style={{ marginTop: 8 }}>
@@ -101,4 +118,5 @@ const s = StyleSheet.create({
   text: { fontSize: 14, color: Colors.black },
   time: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
   empty: { textAlign: 'center', marginTop: 60, color: Colors.textMuted, fontSize: 15 },
+  preview: { fontSize: 13, color: Colors.textMuted, fontStyle: 'italic', marginTop: 2 },
 });
