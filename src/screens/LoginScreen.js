@@ -1,4 +1,4 @@
-// src/screens/LoginScreen.js — Fixed: Google Sign In + Name field + Beautiful UI
+// src/screens/LoginScreen.js — Fixed: Google Sign In web popup, proper error handling
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
@@ -17,13 +17,13 @@ import { doc, setDoc } from 'firebase/firestore';
 import { getFirebaseAuth, db } from '../services/firebase';
 import { Colors } from '../utils/theme';
 
-// Google Sign In — only on native (web uses redirect)
+// Google Sign In — only on native
 let GoogleSignin = null;
 if (Platform.OS !== 'web') {
   try {
     GoogleSignin = require('@react-native-google-signin/google-signin').GoogleSignin;
     GoogleSignin.configure({
-      webClientId: '983241676717-vlvkt72jel22k4p4bfbaihicfboa823v.apps.googleusercontent.com', // 🔴 Firebase Console > Authentication > Google > Web client ID
+      webClientId: '983241676717-vlvkt72jel22k4p4bfbaihicfboa823v.apps.googleusercontent.com',
     });
   } catch (e) {
     GoogleSignin = null;
@@ -31,7 +31,7 @@ if (Platform.OS !== 'web') {
 }
 
 export default function LoginScreen() {
-  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -44,7 +44,6 @@ export default function LoginScreen() {
     getFirebaseAuth().then(setAuth);
   }, []);
 
-  // Save user to Firestore
   const saveUserToFirestore = async (firebaseUser, displayName) => {
     try {
       await setDoc(doc(db, 'users', firebaseUser.uid), {
@@ -78,9 +77,7 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
-      // ✅ Fix: Set displayName immediately
       await updateProfile(cred.user, { displayName: name.trim() });
-      // ✅ Fix: Save to Firestore so Messenger shows real name
       await saveUserToFirestore(cred.user, name.trim());
       Alert.alert('Welcome!', `Account created for ${name.trim()}! 🎉`);
     } catch (e) {
@@ -95,15 +92,20 @@ export default function LoginScreen() {
     setGoogleLoading(true);
     try {
       if (Platform.OS === 'web') {
-        // Web: use Firebase redirect/popup
+        // ✅ Fix: Web — signInWithPopup with proper error handling
         const { signInWithPopup } = await import('firebase/auth');
         const provider = new GoogleAuthProvider();
+        // Force account selection every time
+        provider.setCustomParameters({ prompt: 'select_account' });
         const result = await signInWithPopup(auth, provider);
         await saveUserToFirestore(result.user, result.user.displayName);
       } else {
-        // Native: use @react-native-google-signin/google-signin
+        // Native
         if (!GoogleSignin) {
-          Alert.alert('Setup Required', 'Add @react-native-google-signin/google-signin and set webClientId in LoginScreen.js');
+          Alert.alert(
+            'Setup Required',
+            'Install @react-native-google-signin/google-signin and set correct webClientId.'
+          );
           setGoogleLoading(false);
           return;
         }
@@ -114,7 +116,21 @@ export default function LoginScreen() {
         await saveUserToFirestore(result.user, result.user.displayName);
       }
     } catch (e) {
-      if (e.code !== 'auth/cancelled-popup-request') {
+      // Ignore user-cancelled popup
+      if (
+        e.code === 'auth/cancelled-popup-request' ||
+        e.code === 'auth/popup-closed-by-user'
+      ) {
+        setGoogleLoading(false);
+        return;
+      }
+      // Unauthorized domain error — helpful message
+      if (e.code === 'auth/unauthorized-domain') {
+        Alert.alert(
+          'Domain Not Authorized',
+          'Go to Firebase Console → Authentication → Settings → Authorized domains → add your domain (e.g. localhost or your deployed URL).'
+        );
+      } else {
         Alert.alert('Google Sign In Failed', e.message);
       }
     } finally {
@@ -137,7 +153,6 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
-        {/* Logo */}
         <View style={s.logoWrap}>
           <Text style={s.logo}>
             <Text style={{ color: Colors.primary }}>Ras</Text>
@@ -146,9 +161,7 @@ export default function LoginScreen() {
           <Text style={s.tagline}>Connect with friends and the world around you.</Text>
         </View>
 
-        {/* Card */}
         <View style={s.card}>
-          {/* Mode Tabs */}
           <View style={s.tabs}>
             <TouchableOpacity
               style={[s.tab, mode === 'login' && s.tabActive]}
@@ -164,7 +177,6 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Name field (only register) */}
           {mode === 'register' && (
             <View style={s.inputWrap}>
               <Text style={s.inputIcon}>👤</Text>
@@ -224,14 +236,12 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               )}
 
-              {/* Divider */}
               <View style={s.dividerRow}>
                 <View style={s.dividerLine} />
                 <Text style={s.dividerText}>OR</Text>
                 <View style={s.dividerLine} />
               </View>
 
-              {/* Google Sign In */}
               <TouchableOpacity style={s.googleBtn} onPress={handleGoogleSignIn} disabled={googleLoading}>
                 {googleLoading ? (
                   <ActivityIndicator color="#333" />
@@ -254,99 +264,55 @@ export default function LoginScreen() {
 
 const s = StyleSheet.create({
   container: {
-    flexGrow: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.bgGray,
-    padding: 20,
+    flexGrow: 1, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.bgGray, padding: 20,
   },
   logoWrap: { alignItems: 'center', marginBottom: 24 },
   logo: { fontSize: 52, fontWeight: '900', letterSpacing: -1 },
   tagline: { color: '#555', marginTop: 6, textAlign: 'center', fontSize: 14, maxWidth: 280 },
-
   card: {
-    width: '100%',
-    maxWidth: 420,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 6,
+    width: '100%', maxWidth: 420, backgroundColor: '#fff',
+    borderRadius: 16, padding: 24,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08, shadowRadius: 16, elevation: 6,
   },
-
   tabs: {
-    flexDirection: 'row',
-    backgroundColor: Colors.bgGray,
-    borderRadius: 10,
-    marginBottom: 20,
-    padding: 4,
+    flexDirection: 'row', backgroundColor: Colors.bgGray,
+    borderRadius: 10, marginBottom: 20, padding: 4,
   },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
+  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
   tabActive: { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
   tabText: { fontSize: 15, fontWeight: '600', color: Colors.textMuted },
   tabTextActive: { color: Colors.primary },
-
   inputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-    backgroundColor: '#fafafa',
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10,
+    paddingHorizontal: 12, marginBottom: 12, backgroundColor: '#fafafa',
   },
   inputIcon: { fontSize: 16, marginRight: 8 },
   input: { flex: 1, paddingVertical: 13, fontSize: 15, color: '#000' },
   eyeBtn: { padding: 4 },
-
   btnPrimary: {
-    backgroundColor: Colors.primary,
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 4,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    backgroundColor: Colors.primary, borderRadius: 10,
+    paddingVertical: 14, alignItems: 'center', marginTop: 4,
+    shadowColor: Colors.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
   },
   btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-
   forgotWrap: { alignItems: 'center', marginTop: 12 },
   forgotText: { color: Colors.primary, fontSize: 14, fontWeight: '500' },
-
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 18 },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
   dividerText: { marginHorizontal: 12, color: Colors.textMuted, fontSize: 13, fontWeight: '600' },
-
   googleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    borderRadius: 10,
-    paddingVertical: 13,
-    gap: 10,
-    backgroundColor: '#fff',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10,
+    paddingVertical: 13, gap: 10, backgroundColor: '#fff',
   },
   googleIcon: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#4285F4',
+    fontSize: 18, fontWeight: '900', color: '#4285F4',
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   googleText: { fontSize: 15, fontWeight: '600', color: '#333' },
-
   footer: { marginTop: 24, color: '#aaa', fontSize: 12, textAlign: 'center' },
 });
