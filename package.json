@@ -40,7 +40,8 @@
     "react-native-callkeep": "4.3.12",
     "react-native-voip-push-notification": "3.3.1",
     "@react-native-firebase/app": "^18.9.0",
-    "@react-native-firebase/messaging": "^18.9.0"
+    "@react-native-firebase/messaging": "^18.9.0",
+    "expo-build-properties": "~0.12.3"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
