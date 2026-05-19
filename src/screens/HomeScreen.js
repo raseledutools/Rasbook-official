@@ -1,8 +1,8 @@
-// src/screens/HomeScreen.js
+// src/screens/HomeScreen.js — Fixed: Facebook-style header
 import React, { useState, useEffect } from 'react';
 import {
   View, FlatList, StyleSheet, RefreshControl,
-  Text, ActivityIndicator,
+  Text, ActivityIndicator, Image, TouchableOpacity, Platform,
 } from 'react-native';
 import {
   collection, query, orderBy, onSnapshot, limit,
@@ -11,11 +11,49 @@ import { db } from '../services/firebase';
 import { useAuth } from '../hooks/useAuth';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { setCache, getCache, CACHE_KEYS } from '../utils/cache';
-import { Colors } from '../utils/theme';
+import { Colors, getAvatar, getDisplayName } from '../utils/theme';
 import StoriesBar from '../components/StoriesBar';
 import CreatePost from '../components/CreatePost';
 import PostCard from '../components/PostCard';
 import OfflineBanner from '../components/OfflineBanner';
+import { FontAwesome6 } from '@expo/vector-icons';
+
+function HomeHeader({ user }) {
+  return (
+    <View style={h.header}>
+      <Text style={h.logo}>
+        <Text style={{ color: Colors.primary }}>Ras</Text>
+        <Text style={{ color: Colors.green }}>Book</Text>
+      </Text>
+      <View style={h.icons}>
+        <TouchableOpacity style={h.iconBtn}>
+          <FontAwesome6 name="magnifying-glass" size={18} color="#050505" />
+        </TouchableOpacity>
+        <TouchableOpacity style={h.iconBtn}>
+          <FontAwesome6 name="bell" size={18} color="#050505" />
+        </TouchableOpacity>
+        <Image source={{ uri: getAvatar(user) }} style={h.avatar} />
+      </View>
+    </View>
+  );
+}
+
+const h = StyleSheet.create({
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#fff',
+    borderBottomWidth: 1, borderColor: Colors.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 3,
+  },
+  logo: { fontSize: 28, fontWeight: '900', letterSpacing: -1 },
+  icons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  iconBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: Colors.bgGray, alignItems: 'center', justifyContent: 'center',
+  },
+  avatar: { width: 34, height: 34, borderRadius: 17, marginLeft: 4 },
+});
 
 export default function HomeScreen() {
   const { user } = useAuth();
@@ -56,6 +94,7 @@ export default function HomeScreen() {
 
   return (
     <View style={s.container}>
+      <HomeHeader user={user} />
       <OfflineBanner />
       <FlatList
         data={posts}
@@ -69,10 +108,13 @@ export default function HomeScreen() {
         }
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} tintColor={Colors.primary} />
         }
         ListEmptyComponent={
-          <Text style={s.empty}>No posts yet. Be the first to post!</Text>
+          <View style={s.emptyWrap}>
+            <Text style={{ fontSize: 48 }}>📰</Text>
+            <Text style={s.empty}>No posts yet. Be the first to post!</Text>
+          </View>
         }
       />
     </View>
@@ -82,5 +124,6 @@ export default function HomeScreen() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bgGray },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  empty: { textAlign: 'center', marginTop: 40, color: Colors.textMuted, fontSize: 16 },
+  emptyWrap: { alignItems: 'center', marginTop: 60, gap: 12 },
+  empty: { textAlign: 'center', color: Colors.textMuted, fontSize: 16 },
 });

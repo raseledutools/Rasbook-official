@@ -1,109 +1,78 @@
-# RasBook 📘
+# RasBook — Fixed Version
 
-A Facebook-style social media app built with **React Native + Expo**, powered by **Firebase** & **Cloudinary**.
+## ✅ What was fixed
 
-## 🚀 Features
-- 🔐 Login / Register / Forgot Password (Firebase Auth)
-- 📖 News Feed with real-time updates
-- 📸 Create posts with Photo / Video
-- 👍 Like, 💬 Comment, ✏️ Edit, 🗑️ Delete posts
-- 📺 Stories (auto-expire 24h)
-- 🔔 Notifications (like & comment)
-- 🔍 Search Users
-- 👤 Edit Profile (name + photo)
-- 🌙 Dark Mode
-- 🌐 Web support (react-native-web)
+### 1. 🔐 LoginScreen — Google Sign In + Name field
+- Added **Google Sign In** button (web uses Firebase popup, native needs `@react-native-google-signin/google-signin`)
+- Added **Name field** on registration — so display name is always set
+- `updateProfile()` called immediately after register
+- User saved to Firestore `users` collection on signup
+- Beautiful **tab-based UI** (Log In / Sign Up)
+- Password show/hide toggle
+- Card design with shadow
 
-## 📦 Tech Stack
-| Layer | Tech |
-|---|---|
-| Frontend | React Native + Expo |
-| Navigation | React Navigation v6 |
-| Auth | Firebase Auth |
-| Database | Firestore |
-| Storage | Cloudinary |
-| CI/CD | GitHub Actions + EAS |
-| Web | react-native-web |
+### 2. 💬 MessengerScreen — Real name + Online status
+- **Name bug fixed**: on login, real `displayName` written to Firestore messenger collection
+- **Online indicator** (green dot) shown for users active within 2 minutes
+- Chat unsubscribe properly on contact switch (no memory leak)
+- `senderName` shown in bubble for received messages
+- Cleaner empty state UI
 
-## ⚡ Quick Start
+### 3. 📞 Call Permission Fix
+- **Replaced `navigator.mediaDevices` with Expo permissions** on native
+- `Audio.requestPermissionsAsync()` and `Camera.requestCameraPermissionsAsync()` called before starting a call
+- Clear error messages if permission denied
+- Note: Full native WebRTC calling requires `react-native-webrtc` package
+
+### 4. 👤 ProfileScreen — Updates everywhere
+- Profile save now updates **both** Firestore `users` AND `messenger` presence
+- So name change reflects instantly in Messenger
+- Camera permission requested before photo pick
+- Redesigned with cover photo, camera badge, card layout
+
+### 5. 🏠 HomeScreen — Facebook-style header
+- Added proper header with logo + search + notification icons + avatar
+- Better empty state
+
+### 6. 🎬 ReelsScreen — Permission + Web video fix
+- Permission requested before picking video
+- Web uses native `<video>` element instead of expo-av (which crashes on web)
+- Upload button with loading state
+
+### 7. 🧭 AppNavigator
+- Reels tab added
+- iOS safe area height fix for tab bar
+
+---
+
+## 🚀 Setup
 
 ```bash
-# 1. Clone repo
-git clone https://github.com/YOUR_USERNAME/rasbook.git
-cd rasbook
-
-# 2. Install dependencies
+# Install dependencies
 npm install
 
-# 3. Start development
+# For Google Sign In on native, also run:
+npm install @react-native-google-signin/google-signin
+
+# Start
 npx expo start
-
-# Run on Android
-npx expo start --android
-
-# Run on iOS
-npx expo start --ios
-
-# Run on Web
-npx expo start --web
 ```
 
-## 🔧 GitHub Secrets Setup (for CI/CD)
+## 🔴 One manual step for Google Sign In (Native)
 
-Go to **Settings > Secrets and variables > Actions** and add:
-
-| Secret | Description |
-|---|---|
-| `EXPO_TOKEN` | Get from https://expo.dev/accounts/[user]/settings/access-tokens |
-| `VERCEL_TOKEN` | Get from https://vercel.com/account/tokens |
-| `VERCEL_ORG_ID` | From `.vercel/project.json` |
-| `VERCEL_PROJECT_ID` | From `.vercel/project.json` |
-
-## 📁 Project Structure
+In `src/screens/LoginScreen.js`, replace:
+```js
+webClientId: 'YOUR_WEB_CLIENT_ID',
 ```
-RasBook/
-├── App.js                        # Root entry
-├── app.json                      # Expo config
-├── eas.json                      # EAS Build config
-├── .github/
-│   └── workflows/
-│       └── ci.yml                # GitHub Actions CI/CD
-└── src/
-    ├── screens/
-    │   ├── LoginScreen.js
-    │   ├── HomeScreen.js
-    │   ├── ProfileScreen.js
-    │   ├── NotificationsScreen.js
-    │   └── SearchScreen.js
-    ├── components/
-    │   ├── PostCard.js
-    │   ├── CreatePost.js
-    │   ├── StoriesBar.js
-    │   └── Header.js
-    ├── navigation/
-    │   └── AppNavigator.js
-    ├── hooks/
-    │   ├── useAuth.js
-    │   └── useDarkMode.js
-    ├── services/
-    │   ├── firebase.js
-    │   └── cloudinary.js
-    └── utils/
-        └── theme.js
-```
+With your actual Web Client ID from:
+**Firebase Console → Authentication → Sign-in method → Google → Web SDK configuration → Web client ID**
 
-## 🏗️ Build for Production
+---
 
-```bash
-# Install EAS CLI
-npm install -g eas-cli
-
-# Login to Expo
-eas login
-
-# Build Android APK
-eas build --platform android --profile preview
-
-# Build iOS
-eas build --platform ios --profile preview
-```
+## 📁 Files Changed
+- `src/screens/LoginScreen.js` ← Google Sign In, Name field, new UI
+- `src/screens/MessengerScreen.js` ← Name fix, permission fix, online dots
+- `src/screens/ProfileScreen.js` ← Updates Firestore + Messenger on save
+- `src/screens/HomeScreen.js` ← Facebook-style header
+- `src/screens/ReelsScreen.js` ← Permission + web video fix
+- `src/navigation/AppNavigator.js` ← Reels tab, iOS height fix

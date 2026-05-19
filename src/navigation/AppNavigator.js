@@ -1,17 +1,23 @@
-// src/navigation/AppNavigator.js
+// src/navigation/AppNavigator.js — Updated: Ads tab + Stack navigator for detail screens
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, StyleSheet } from 'react-native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { View, StyleSheet, Platform } from 'react-native';
 import { FontAwesome6 } from '@expo/vector-icons';
 
 import HomeScreen from '../screens/HomeScreen';
 import MessengerScreen from '../screens/MessengerScreen';
-import SearchScreen from '../screens/SearchScreen';
+import ReelsScreen from '../screens/ReelsScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import AdsScreen from '../screens/AdsScreen';
+import AdDetailScreen from '../screens/AdDetailScreen';
+import PostAdScreen from '../screens/PostAdScreen';
+import CompanyDashboardScreen from '../screens/CompanyDashboardScreen';
 import { Colors } from '../utils/theme';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
 const TabIcon = ({ name, focused }) => (
   <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
@@ -24,6 +30,18 @@ const TabIcon = ({ name, focused }) => (
   </View>
 );
 
+// Ads Stack — wraps Ads browse + Detail + Post + Dashboard
+function AdsStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="AdsBrowse" component={AdsScreen} />
+      <Stack.Screen name="AdDetail" component={AdDetailScreen} />
+      <Stack.Screen name="PostAd" component={PostAdScreen} />
+      <Stack.Screen name="CompanyDashboard" component={CompanyDashboardScreen} />
+    </Stack.Navigator>
+  );
+}
+
 export default function AppNavigator() {
   return (
     <Tab.Navigator
@@ -35,7 +53,14 @@ export default function AppNavigator() {
         tabBarStyle: {
           backgroundColor: '#fff',
           borderTopColor: Colors.border,
-          height: 56,
+          height: Platform.OS === 'ios' ? 80 : 60,
+          paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+          paddingTop: 4,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+          elevation: 8,
         },
       }}
     >
@@ -50,9 +75,14 @@ export default function AppNavigator() {
         options={{ tabBarIcon: ({ focused }) => <TabIcon name="facebook-messenger" focused={focused} /> }}
       />
       <Tab.Screen
-        name="Search"
-        component={SearchScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon name="magnifying-glass" focused={focused} /> }}
+        name="Ads"
+        component={AdsStack}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon name="bullhorn" focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="Reels"
+        component={ReelsScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon name="film" focused={focused} /> }}
       />
       <Tab.Screen
         name="Notifications"
@@ -70,11 +100,9 @@ export default function AppNavigator() {
 
 const styles = StyleSheet.create({
   iconWrap: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
+    width: 46, height: 40,
+    alignItems: 'center', justifyContent: 'center',
+    borderRadius: 10,
   },
   iconWrapActive: {
     backgroundColor: '#e7f3ff',
