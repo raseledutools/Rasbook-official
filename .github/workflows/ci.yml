@@ -23,6 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
       - name: Install dependencies
         run: npm install --legacy-peer-deps
       - name: Run lint
@@ -38,17 +39,34 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+
       - name: Install dependencies
         run: npm install --legacy-peer-deps
+
+      # react-native-callkeep web-এ চলে না, তাই stub বানাও
+      - name: Stub native-only modules for web
+        run: |
+          mkdir -p node_modules/react-native-callkeep
+          echo "module.exports = {};" > node_modules/react-native-callkeep/index.js
+          echo '{"name":"react-native-callkeep","version":"4.3.12","main":"index.js"}' > node_modules/react-native-callkeep/package.json
+
+          mkdir -p node_modules/react-native-voip-push-notification
+          echo "module.exports = {};" > node_modules/react-native-voip-push-notification/index.js
+          echo '{"name":"react-native-voip-push-notification","version":"3.3.1","main":"index.js"}' > node_modules/react-native-voip-push-notification/package.json
+
       - name: Build web
         run: npx expo export --platform web
         env:
           NODE_ENV: production
+
       - name: Add .nojekyll
         run: touch ./dist/.nojekyll
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -57,7 +75,7 @@ jobs:
           publish_branch: gh-pages
 
   # ─────────────────────────────────────────
-  # 3. Android APK → GitHub Releases
+  # 3. Android APK via EAS → GitHub Releases
   # ─────────────────────────────────────────
   build-android:
     name: 🤖 Build Android APK
@@ -70,6 +88,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps
@@ -79,8 +98,7 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      # EAS-এ build submit করো এবং শেষ হওয়া পর্যন্ত wait করো
-      - name: Build APK on EAS (wait for completion)
+      - name: Build APK on EAS
         run: |
           eas build \
             --platform android \
@@ -90,12 +108,11 @@ jobs:
             --json > build_output.json
           cat build_output.json
 
-      # Build output থেকে APK URL বের করো
       - name: Extract APK URL
         id: apk_url
         run: |
           URL=$(python3 -c "
-          import json, sys
+          import json
           data = json.load(open('build_output.json'))
           if isinstance(data, list):
               print(data[0].get('artifacts', {}).get('buildUrl', ''))
@@ -105,14 +122,12 @@ jobs:
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "APK URL: $URL"
 
-      # APK download করো
       - name: Download APK
         if: steps.apk_url.outputs.url != ''
         run: |
           curl -L "${{ steps.apk_url.outputs.url }}" -o rasbook.apk
           ls -lh rasbook.apk
 
-      # GitHub Release বানাও এবং APK attach করো
       - name: Create GitHub Release with APK
         if: steps.apk_url.outputs.url != ''
         uses: softprops/action-gh-release@v2
@@ -120,17 +135,19 @@ jobs:
           tag_name: v${{ github.run_number }}
           name: "📱 RasBook APK — Build #${{ github.run_number }}"
           body: |
-            ## RasBook Android APK
+            ## RasBook Android APK — Build #${{ github.run_number }}
 
             **Commit:** `${{ github.sha }}`
-            **Branch:** `${{ github.ref_name }}`
 
-            ### ⬇️ Download
-            নিচের `rasbook.apk` file-এ click করে download করো।
+            ### ✅ এই build-এ আছে
+            - 🔒 Real E2E Encryption (AES-GCM 256-bit)
+            - 📎 File Sharing — Photo, Video, Audio, Document
+            - 📞 Lock Screen Call Fix
+            - 🔔 Background Call Notification
 
-            ### Install করতে
-            1. APK download করো
-            2. ফোনে Settings → Unknown Sources → Allow
+            ### ⬇️ Install
+            1. `rasbook.apk` download করো
+            2. Settings → Security → Unknown Sources → Allow
             3. APK install করো
           files: rasbook.apk
           token: ${{ secrets.GITHUB_TOKEN }}

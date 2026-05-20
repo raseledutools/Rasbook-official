@@ -55,7 +55,7 @@ export const sendPushNotification = async (expoPushToken, title, body, data = {}
 
 // ── Call notification — FCM data-only (wakes killed app via CallKeep) ────────
 // FCM data-only message → background handler জাগে → CallKeep full-screen দেখায়
-export const sendCallNotification = async (tokens, callerName, callType, callId) => {
+export const sendCallNotification = async (tokens, callerName, callType, callId, callerUid) => {
   const { expoPushToken, fcmToken } = tokens || {};
 
   // Method 1: FCM direct (app killed হলেও কাজ করে — CallKeep trigger)
@@ -76,6 +76,7 @@ export const sendCallNotification = async (tokens, callerName, callType, callId)
         channelId: 'incoming-call',
         data: {
           type: 'incoming_call',
+          callerUid: callerUid || '',
           callType,
           callerName,
           callId,
