@@ -12,14 +12,15 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk",
-        "image": "ubuntu-22.04-jdk-17-ndk-r25b"
+        "image": "ubuntu-22.04-jdk-17-ndk-r25b",
+        "gradleCommand": ":app:assembleRelease"
       },
       "ios": {
         "simulator": true
       },
       "node": "20.11.0",
       "env": {
-        "GRADLE_OPTS": "-Dorg.gradle.jvmargs=-Xmx4096m"
+        "GRADLE_OPTS": "-Dorg.gradle.jvmargs=-Xmx4096m -Dorg.gradle.daemon=false"
       }
     },
     "production": {

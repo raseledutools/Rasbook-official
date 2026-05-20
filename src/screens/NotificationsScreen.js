@@ -49,7 +49,7 @@ export default function NotificationsScreen() {
       setLoading(false);
       // Mark all as read
       snap.docs.forEach((d) => {
-        if (!d.data().isRead) {
+        if (!d.data()?.isRead) {
           updateDoc(doc(db, 'notifications', d.id), { isRead: true }).catch(() => {});
         }
       });

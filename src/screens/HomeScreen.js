@@ -29,7 +29,8 @@ import CreatePost from '../components/CreatePost';
 import OfflineBanner from '../components/OfflineBanner';
 import { FontAwesome6 } from '@expo/vector-icons';
 
-const { width: SCREEN_W } = Dimensions.get('window');
+const _SCREEN_W = Dimensions.get('window').width;
+const SCREEN_W = (Platform.OS === 'web' && _SCREEN_W > 500) ? 390 : _SCREEN_W;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS & MOCK DATA
@@ -269,7 +270,7 @@ function MemoriesCard({ memory }) {
         </View>
         <TouchableOpacity><FontAwesome6 name="xmark" size={18} color={Colors.textMuted} /></TouchableOpacity>
       </View>
-      <Image source={{ uri: memory.image }} style={mc.image} resizeMode="cover" />
+      <Image source={{ uri: memory.image || 'https://via.placeholder.com/200' }} style={mc.image} resizeMode="cover" />
       <View style={mc.footer}>
         <TouchableOpacity style={mc.shareBtn}>
           <FontAwesome6 name="share" size={14} color={Colors.primary} />
@@ -316,7 +317,7 @@ function FriendSuggestions({ suggestions }) {
             <TouchableOpacity onPress={() => handleRemove(person.uid)} style={fsg.closeBtn}>
               <FontAwesome6 name="xmark" size={12} color={Colors.textMuted} />
             </TouchableOpacity>
-            <Image source={{ uri: person.avatar }} style={fsg.avatar} />
+            <Image source={{ uri: person.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(person.name||'U')}&background=1877F2&color=fff` }} style={fsg.avatar} />
             <Text style={fsg.name} numberOfLines={1}>{person.displayName}</Text>
             <Text style={fsg.mutuals}>{person.mutuals} mutual friends</Text>
             {added[person.uid] ? (
@@ -368,7 +369,7 @@ function MarketplacePreview({ items }) {
       <View style={mpv.grid}>
         {items.map((item) => (
           <TouchableOpacity key={item.id} style={mpv.item} activeOpacity={0.8}>
-            <Image source={{ uri: item.image }} style={mpv.itemImg} />
+            {item.image ? <Image source={{ uri: item.image }} style={mpv.itemImg} /> : <View style={[mpv.itemImg, {backgroundColor: '#e0e0e0'}]} />}
             <Text style={mpv.itemTitle} numberOfLines={1}>{item.title}</Text>
             <Text style={mpv.itemPrice}>{item.price}</Text>
             <Text style={mpv.itemLoc}>{item.location}</Text>
@@ -410,7 +411,7 @@ function WatchPreview({ videos }) {
         {videos.map((v) => (
           <TouchableOpacity key={v.id} style={wpr.card} activeOpacity={0.8}>
             <View style={wpr.thumbWrap}>
-              <Image source={{ uri: v.thumb }} style={wpr.thumb} />
+              {v.thumb ? <Image source={{ uri: v.thumb }} style={wpr.thumb} /> : <View style={[wpr.thumb, {backgroundColor: '#222'}]} />}
               <View style={wpr.playOverlay}>
                 <FontAwesome6 name="play" size={20} color="#fff" solid />
               </View>
@@ -459,7 +460,7 @@ function GroupsWidget({ groups }) {
       </View>
       {groups.map((g) => (
         <TouchableOpacity key={g.id} style={grp.row} activeOpacity={0.8}>
-          <Image source={{ uri: g.image }} style={grp.avatar} />
+          <Image source={{ uri: g.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(g.name||'G')}&background=1877F2&color=fff` }} style={grp.avatar} />
           <View style={{ flex: 1 }}>
             <Text style={grp.name}>{g.name}</Text>
             <Text style={grp.meta}>{g.members} · {g.activity}</Text>
@@ -503,7 +504,7 @@ function EventsWidget({ events }) {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={evw.scroll}>
         {events.map((ev) => (
           <View key={ev.id} style={evw.card}>
-            <Image source={{ uri: ev.image }} style={evw.image} />
+            {ev.image ? <Image source={{ uri: ev.image }} style={evw.image} /> : <View style={[evw.image, {backgroundColor: '#e7f3ff'}]} />}
             <View style={evw.info}>
               <Text style={evw.evName} numberOfLines={1}>{ev.name}</Text>
               <Text style={evw.evDate}>{ev.date}</Text>
@@ -609,7 +610,7 @@ function SponsoredAdCard({ ad }) {
         </TouchableOpacity>
       </View>
       <Text style={sac.text}>{ad.text}</Text>
-      <Image source={{ uri: ad.image }} style={sac.image} resizeMode="cover" />
+      {ad.image ? <Image source={{ uri: ad.image }} style={sac.image} resizeMode="cover" /> : <View style={[sac.image, {backgroundColor: '#f0f2f5'}]} />}
       <View style={sac.footer}>
         <Text style={sac.adUrl}>rasbook.com</Text>
         <TouchableOpacity style={sac.ctaBtn}>
@@ -989,7 +990,7 @@ function PostCard({ post, currentUser, savedPosts, onToggleSave }) {
           const snap = await getDoc(postRef).catch(() => null);
           if (snap?.exists()) {
             await updateDoc(postRef, {
-              comments: snap.data().comments.filter((c) => c.commentId !== commentId),
+              comments: (snap.data()?.comments || []).filter((c) => c.commentId !== commentId),
             }).catch(() => {});
           }
         },
@@ -1105,7 +1106,7 @@ function PostCard({ post, currentUser, savedPosts, onToggleSave }) {
           <Text style={pcd.sharedAuthor}>{post.sharedPostData.userName}</Text>
           {!!post.sharedPostData.text && <Text style={pcd.sharedText} numberOfLines={3}>{post.sharedPostData.text}</Text>}
           {post.sharedPostData.mediaUrl && post.sharedPostData.mediaType === 'image' && (
-            <Image source={{ uri: post.sharedPostData.mediaUrl }} style={pcd.sharedMedia} resizeMode="cover" />
+            {post.sharedPostData?.mediaUrl ? <Image source={{ uri: post.sharedPostData.mediaUrl }} style={pcd.sharedMedia} resizeMode="cover" /> : null}
           )}
         </View>
       )}
@@ -1115,7 +1116,7 @@ function PostCard({ post, currentUser, savedPosts, onToggleSave }) {
 
       {/* Media */}
       {post.mediaUrl && post.mediaType === 'image' && !post.sharedPostData && (
-        <Image source={{ uri: post.mediaUrl }} style={pcd.media} resizeMode="cover" />
+        {post.mediaUrl ? <Image source={{ uri: post.mediaUrl }} style={pcd.media} resizeMode="cover" /> : null}
       )}
       {post.mediaUrl && post.mediaType === 'video' && !post.sharedPostData && (
         <View style={pcd.videoWrap}>
@@ -1174,7 +1175,7 @@ function PostCard({ post, currentUser, savedPosts, onToggleSave }) {
             return (
               <View key={c.commentId}>
                 <View style={pcd.commentItem}>
-                  <Image source={{ uri: c.userAvatar }} style={pcd.commentAvatar} />
+                  <Image source={{ uri: c.userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.userName||'U')}&background=ccc&color=fff` }} style={pcd.commentAvatar} />
                   <View style={pcd.bubble}>
                     <Text style={pcd.commentAuthor}>{c.userName}</Text>
                     <Text style={pcd.commentText}>{c.text}</Text>

@@ -1,7 +1,6 @@
 // src/services/callKeepService.js
-// WhatsApp-style incoming call — works even when app is killed
 import { Platform } from 'react-native';
-// uuid — built-in, no package needed
+
 const generateUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -11,16 +10,18 @@ const generateUUID = () => {
 };
 
 const isNative = Platform.OS !== 'web';
-
 let RNCallKeep = null;
 let callKeepReady = false;
 
-// ── Setup CallKeep (call once at app start) ──────────────────────────────────
 export const setupCallKeep = async () => {
   if (!isNative) return;
   try {
-    RNCallKeep = (await import('react-native-callkeep')).default;
-
+    const mod = require('react-native-callkeep');
+    RNCallKeep = mod.default || mod;
+    if (!RNCallKeep || !RNCallKeep.setup) {
+      console.warn('[CallKeep] Module loaded but setup not available');
+      return;
+    }
     await RNCallKeep.setup({
       ios: {
         appName: 'RasBook',
@@ -35,7 +36,6 @@ export const setupCallKeep = async () => {
         cancelButton: 'Cancel',
         okButton: 'Allow',
         imageName: 'ic_launcher_round',
-        // Makes the incoming call show as full-screen even when phone is locked
         additionalPermissions: ['android.permission.READ_PHONE_STATE'],
         foregroundService: {
           channelId: 'rasbook_call',
@@ -45,48 +45,49 @@ export const setupCallKeep = async () => {
         },
       },
     });
-
     callKeepReady = true;
-    console.log('CallKeep ready');
+    console.log('[CallKeep] Ready');
   } catch (e) {
-    console.warn('CallKeep setup failed:', e.message);
+    console.warn('[CallKeep] Setup failed (non-fatal):', e?.message || e);
+    callKeepReady = false;
   }
 };
 
-// ── Show incoming call screen (full-screen, even if app is killed) ───────────
 export const showIncomingCall = (callerName, callId, isVideo = false) => {
-  if (!callKeepReady || !RNCallKeep) return;
-  const callUUID = callId || generateUUID();
-  RNCallKeep.displayIncomingCall(callUUID, callerName, callerName, 'generic', isVideo);
-  return callUUID;
+  if (!callKeepReady || !RNCallKeep) return null;
+  try {
+    const callUUID = callId || generateUUID();
+    RNCallKeep.displayIncomingCall(callUUID, callerName, callerName, 'generic', isVideo);
+    return callUUID;
+  } catch (e) {
+    console.warn('[CallKeep] showIncomingCall failed:', e?.message);
+    return null;
+  }
 };
 
-// ── End a call ────────────────────────────────────────────────────────────────
 export const endCallKeep = (callUUID) => {
   if (!callKeepReady || !RNCallKeep || !callUUID) return;
-  try {
-    RNCallKeep.endCall(callUUID);
-  } catch (e) {}
+  try { RNCallKeep.endCall(callUUID); } catch (e) {}
 };
 
-// ── Register answer/reject listeners ─────────────────────────────────────────
-// onAnswer: () => void, onReject: () => void
 export const registerCallKeepListeners = (onAnswer, onReject) => {
   if (!callKeepReady || !RNCallKeep) return () => {};
-
-  RNCallKeep.addEventListener('answerCall', ({ callUUID }) => {
-    RNCallKeep.setCurrentCallActive(callUUID);
-    onAnswer(callUUID);
-  });
-
-  RNCallKeep.addEventListener('endCall', ({ callUUID }) => {
-    onReject(callUUID);
-  });
-
-  RNCallKeep.addEventListener('didPerformDTMFAction', () => {});
-
-  return () => {
-    RNCallKeep.removeEventListener('answerCall');
-    RNCallKeep.removeEventListener('endCall');
-  };
+  try {
+    RNCallKeep.addEventListener('answerCall', ({ callUUID }) => {
+      try { RNCallKeep.setCurrentCallActive(callUUID); } catch (e) {}
+      onAnswer && onAnswer(callUUID);
+    });
+    RNCallKeep.addEventListener('endCall', ({ callUUID }) => {
+      onReject && onReject(callUUID);
+    });
+    return () => {
+      try {
+        RNCallKeep.removeEventListener('answerCall');
+        RNCallKeep.removeEventListener('endCall');
+      } catch (e) {}
+    };
+  } catch (e) {
+    console.warn('[CallKeep] Listener registration failed:', e?.message);
+    return () => {};
+  }
 };

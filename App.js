@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { View, ActivityIndicator, Platform } from 'react-native';
 
 import { AuthProvider, useAuth } from './src/hooks/useAuth';
+import ErrorBoundary from './src/components/ErrorBoundary';
 import AppNavigator from './src/navigation/AppNavigator';
 import LoginScreen from './src/screens/LoginScreen';
 import { Colors } from './src/utils/theme';
@@ -14,9 +15,11 @@ import {
   setupCallKeep, showIncomingCall, endCallKeep, registerCallKeepListeners,
 } from './src/services/callKeepService';
 
-// CallKeep — app launch-এই একবার setup
+// CallKeep — delay করে setup করো (permission crash avoid)
 if (Platform.OS !== 'web') {
-  setupCallKeep();
+  setTimeout(() => {
+    setupCallKeep().catch(() => {});
+  }, 2000);
 }
 
 function RootApp() {
@@ -37,8 +40,8 @@ function RootApp() {
     registerForPushNotifications(user.uid).catch(() => {});
 
     // 2. FCM foreground handler (app open বা background)
-    import('@react-native-firebase/messaging').then((messaging) => {
-      fcmUnsubRef.current = messaging.default().onMessage(async (remoteMessage) => {
+    try { const _msg = require('@react-native-firebase/messaging').default;
+    fcmUnsubRef.current = _msg().onMessage(async (remoteMessage) => {
         const data = remoteMessage?.data;
         if (data?.type === 'incoming_call') {
           // callId + callerUid save করো — answer করলে Messenger-এ pass হবে
@@ -57,7 +60,7 @@ function RootApp() {
       });
 
       // Background state — notification tap করলে
-      messaging.default().onNotificationOpenedApp((remoteMessage) => {
+      _msg().onNotificationOpenedApp((remoteMessage) => {
         const data = remoteMessage?.data;
         if (data?.type === 'incoming_call') {
           // ✅ FIX: callerUid সহ navigate করো
@@ -69,7 +72,7 @@ function RootApp() {
       });
 
       // App killed থেকে open — getInitialNotification দিয়ে check করো
-      messaging.default().getInitialNotification().then((remoteMessage) => {
+      _msg().getInitialNotification().then((remoteMessage) => {
         if (remoteMessage?.data?.type === 'incoming_call') {
           const d = remoteMessage.data;
           pendingCallRef.current = { callId: d.callId, callerUid: d.callerUid, callerName: d.callerName };
@@ -81,7 +84,7 @@ function RootApp() {
           }, 1000); // navigation ready হওয়ার জন্য delay
         }
       }).catch(() => {});
-    }).catch(() => {});
+    } catch(_fcmErr) { console.warn('[FCM] setup failed:', _fcmErr?.message); }
 
     // 3. CallKeep answer/reject listener
     // ✅ FIX: answer করলে pendingCallRef থেকে callerUid নিয়ে navigate করো
@@ -136,12 +139,16 @@ function RootApp() {
 
 export default function App() {
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#F0F2F5' }}>
-      <SafeAreaProvider>
-        <AuthProvider>
-          <RootApp />
-        </AuthProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#F0F2F5' }}>
+        <SafeAreaProvider>
+          <AuthProvider>
+            <ErrorBoundary>
+              <RootApp />
+            </ErrorBoundary>
+          </AuthProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }

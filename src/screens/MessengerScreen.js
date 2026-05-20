@@ -52,6 +52,7 @@ if (Platform.OS === 'web') {
 const CHAT_NS = 'rasbook-messenger-v1';
 const { width: SCREEN_W } = Dimensions.get('window');
 const IS_TABLET = SCREEN_W > 768;
+const IS_WEB_DESKTOP = false; // disabled - WebPhoneLayout handles this now
 
 // ── STUN + TURN servers ────────────────────────────────────────────────────
 const METERED_API_KEY = '67ee7b540f71cc805dcafca2b17c66f318ad';
@@ -463,12 +464,27 @@ export default function MessengerScreen({ route }) {
       return null;
     }
     try {
-      return await mediaDevices_impl.getUserMedia({
-        audio: true, video: type === 'video' ? { facingMode: 'user' } : false,
-      });
-    } catch {
+      const constraints = {
+        audio: true,
+        video: type === 'video' ? {
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+        } : false,
+      };
+      return await mediaDevices_impl.getUserMedia(constraints);
+    } catch (err) {
+      console.warn('[RasBook] getUserMedia error:', err);
+      // Try audio-only fallback
       try { return await mediaDevices_impl.getUserMedia({ audio: true, video: false }); }
-      catch { Alert.alert('Permission Denied', 'Microphone access required.'); return null; }
+      catch (e2) {
+        if (Platform.OS === 'web') {
+          alert('Camera/Microphone permission denied. Please allow access in browser settings.');
+        } else {
+          Alert.alert('Permission Denied', 'Camera/Microphone access required.');
+        }
+        return null;
+      }
     }
   };
 
@@ -653,7 +669,7 @@ export default function MessengerScreen({ route }) {
         {type === 'image' && fileMeta?.url ? (
           <TouchableOpacity onPress={() => openFile(fileMeta.url)}>
             <Image
-              source={{ uri: fileMeta.url }}
+              source={{ uri: fileMeta?.url || '' }}
               style={s.msgImage}
               resizeMode="cover"
             />
@@ -664,7 +680,7 @@ export default function MessengerScreen({ route }) {
         {type === 'video' && fileMeta?.url ? (
           <TouchableOpacity style={s.videoBubble} onPress={() => openFile(fileMeta.url)}>
             {fileMeta.thumbnail
-              ? <Image source={{ uri: fileMeta.thumbnail }} style={s.msgImage} resizeMode="cover" />
+              ? (fileMeta?.thumbnail ? <Image source={{ uri: fileMeta.thumbnail }} style={s.msgImage} resizeMode="cover" /> : <View style={[s.msgImage, {backgroundColor: '#222'}]} />) 
               : <View style={[s.msgImage, s.videoPlaceholder]} />
             }
             <View style={s.playOverlay}>
@@ -729,7 +745,7 @@ export default function MessengerScreen({ route }) {
       >
         {/* SIDEBAR */}
         {showSidebar && (
-          <View style={[s.sidebar, IS_TABLET && { width: 320 }]}>
+          <View style={[s.sidebar, (IS_TABLET || IS_WEB_DESKTOP) && { width: 320, maxWidth: 320 }]}>
             <View style={s.sideHeader}>
               <Text style={s.sideTitle}>
                 <Text style={{ color: Colors.primary }}>Ras</Text>Book Messenger
@@ -990,9 +1006,25 @@ function WebMediaElements({ callType, callConnected }) {
     if (el) {
       if (callType === 'video' && callConnected) {
         el.style.display = 'block';
-        if (el.srcObject?.getTracks().length > 0) el.play().catch(() => {});
-      } else if (!el.getAttribute('data-ready')) {
+        // Try to play, retry if needed
+        const tryPlay = () => {
+          if (el.srcObject && el.srcObject.getTracks().length > 0) {
+            el.play().catch(() => {
+              setTimeout(tryPlay, 500);
+            });
+          }
+        };
+        tryPlay();
+      } else {
         el.style.display = 'none';
+      }
+    }
+    // Also show local video when starting video call
+    const lv = document.getElementById('rb-local-video');
+    if (lv && callType === 'video') {
+      if (lv.srcObject && lv.srcObject.getTracks().length > 0) {
+        lv.style.display = 'block';
+        lv.play().catch(() => {});
       }
     }
   }, [callType, callConnected]);
@@ -1001,7 +1033,7 @@ function WebMediaElements({ callType, callConnected }) {
 
 // ── Styles ─────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  sidebar: { flex: 1, backgroundColor: '#fff', borderRightWidth: 1, borderColor: Colors.border },
+  sidebar: { flexGrow: 1, flexShrink: 0, backgroundColor: '#fff', borderRightWidth: 1, borderColor: Colors.border },
   sideHeader: { padding: 16, paddingTop: Platform.OS === 'ios' ? 8 : 16, borderBottomWidth: 1, borderColor: Colors.border },
   sideTitle: { fontSize: 20, fontWeight: '800', color: '#050505' },
   searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 10, backgroundColor: Colors.bgGray, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },

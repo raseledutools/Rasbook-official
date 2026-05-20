@@ -42,7 +42,9 @@
     "react-native-voip-push-notification": "3.3.1",
     "@react-native-firebase/app": "^18.9.0",
     "@react-native-firebase/messaging": "^18.9.0",
-    "expo-build-properties": "~0.12.3"
+    "expo-build-properties": "~0.12.3",
+    "react-native-webrtc": "^118.0.0",
+    "@react-native-google-signin/google-signin": "^12.2.1"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",

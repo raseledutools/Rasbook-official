@@ -16,6 +16,7 @@ import {
 import { doc, setDoc } from 'firebase/firestore';
 import { getFirebaseAuth, db } from '../services/firebase';
 import { Colors } from '../utils/theme';
+import WebPhoneLayout from '../components/WebPhoneLayout';
 
 // Google Sign In — only on native
 let GoogleSignin = null;
@@ -151,6 +152,7 @@ export default function LoginScreen() {
   const isLoading = loading || !auth;
 
   return (
+    <WebPhoneLayout>
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: Colors.bgGray }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={{ backgroundColor: Colors.bgGray }} contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
         <View style={s.logoWrap}>
@@ -259,6 +261,7 @@ export default function LoginScreen() {
         <Text style={s.footer}>RasBook © 2025 · Connect · Share · Discover</Text>
       </ScrollView>
     </KeyboardAvoidingView>
+    </WebPhoneLayout>
   );
 }
 

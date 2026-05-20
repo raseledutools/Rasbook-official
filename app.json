@@ -11,14 +11,21 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.rasbook.app",
       "infoPlist": {
         "NSCameraUsageDescription": "RasBook needs camera access for video calls.",
         "NSMicrophoneUsageDescription": "RasBook needs microphone access for voice and video calls.",
-        "UIBackgroundModes": ["voip", "audio", "fetch", "remote-notification"]
+        "UIBackgroundModes": [
+          "voip",
+          "audio",
+          "fetch",
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -35,11 +42,18 @@
         "INTERNET",
         "ACCESS_NETWORK_STATE",
         "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MICROPHONE",
+        "FOREGROUND_SERVICE_CAMERA",
         "RECEIVE_BOOT_COMPLETED",
         "READ_PHONE_STATE",
         "MANAGE_OWN_CALLS",
-        "VIBRATE"
-      ]
+        "CALL_PHONE",
+        "VIBRATE",
+        "WAKE_LOCK",
+        "USE_FULL_SCREEN_INTENT",
+        "SYSTEM_ALERT_WINDOW"
+      ],
+      "intentFilters": []
     },
     "web": {
       "favicon": "./src/assets/favicon.png",

@@ -19,7 +19,10 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import OfflineBanner from '../components/OfflineBanner';
 import { FontAwesome6 } from '@expo/vector-icons';
 
-const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
+const { height: SCREEN_H } = Dimensions.get('window');
+const _SW = Dimensions.get('window').width;
+const SCREEN_W = (Platform.OS === 'web' && _SW > 500) ? 390 : _SW;
+const SCREEN_H_SAFE = (Platform.OS === 'web') ? Math.min(Dimensions.get('window').height - 48, 780) : SCREEN_H;
 
 // Platform-aware video player
 const VideoComponent = Platform.select({
@@ -208,7 +211,7 @@ export default function ReelsScreen() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
-  reelContainer: { width: SCREEN_W, height: SCREEN_H, backgroundColor: '#000' },
+  reelContainer: { width: SCREEN_W, height: typeof SCREEN_H_SAFE !== 'undefined' ? SCREEN_H_SAFE : SCREEN_H, backgroundColor: '#000' },
   gradientOverlay: {
     ...StyleSheet.absoluteFillObject,
     background: Platform.OS === 'web'
