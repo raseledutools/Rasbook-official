@@ -42,7 +42,7 @@ function AdCard({ ad, currentUser, onPress }) {
     <TouchableOpacity style={s.card} onPress={() => onPress(ad)} activeOpacity={0.92}>
       {/* Ad Image */}
       {ad.imageUrl ? (
-        {ad.imageUrl ? <Image source={{ uri: ad.imageUrl }} style={s.adImage} resizeMode="cover" /> : <View style={[s.adImage, {backgroundColor: '#f0f2f5', alignItems:'center', justifyContent:'center'}]} />}
+        <Image source={{ uri: ad.imageUrl }} style={s.adImage} resizeMode="cover" />
       ) : (
         <View style={[s.adImagePlaceholder, { backgroundColor: ad.placeholderColor || '#E6F1FB' }]}>
           <Text style={{ fontSize: 48 }}>{ad.emoji || '📦'}</Text>
