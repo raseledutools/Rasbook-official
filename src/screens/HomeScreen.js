@@ -1106,7 +1106,7 @@ function PostCard({ post, currentUser, savedPosts, onToggleSave }) {
           <Text style={pcd.sharedAuthor}>{post.sharedPostData.userName}</Text>
           {!!post.sharedPostData.text && <Text style={pcd.sharedText} numberOfLines={3}>{post.sharedPostData.text}</Text>}
           {post.sharedPostData.mediaUrl && post.sharedPostData.mediaType === 'image' && (
-            {post.sharedPostData?.mediaUrl ? <Image source={{ uri: post.sharedPostData.mediaUrl }} style={pcd.sharedMedia} resizeMode="cover" /> : null}
+            <Image source={{ uri: post.sharedPostData.mediaUrl }} style={pcd.sharedMedia} resizeMode="cover" />
           )}
         </View>
       )}
@@ -1116,7 +1116,7 @@ function PostCard({ post, currentUser, savedPosts, onToggleSave }) {
 
       {/* Media */}
       {post.mediaUrl && post.mediaType === 'image' && !post.sharedPostData && (
-        {post.mediaUrl ? <Image source={{ uri: post.mediaUrl }} style={pcd.media} resizeMode="cover" /> : null}
+        <Image source={{ uri: post.mediaUrl }} style={pcd.media} resizeMode="cover" />
       )}
       {post.mediaUrl && post.mediaType === 'video' && !post.sharedPostData && (
         <View style={pcd.videoWrap}>
