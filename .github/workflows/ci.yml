@@ -65,6 +65,11 @@ jobs:
       - name: Add .nojekyll
         run: touch ./dist/.nojekyll
 
+      - name: Fix asset paths for GitHub Pages
+        run: |
+          sed -i 's|src="/|src="/Rasbook-official/|g' ./dist/index.html || true
+          sed -i 's|href="/|href="/Rasbook-official/|g' ./dist/index.html || true
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:

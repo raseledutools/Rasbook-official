@@ -43,7 +43,8 @@
     },
     "web": {
       "favicon": "./src/assets/favicon.png",
-      "bundler": "metro"
+      "bundler": "metro",
+      "publicPath": "/Rasbook-official/"
     },
     "plugins": [
       [
