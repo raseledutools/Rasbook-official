@@ -20,12 +20,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "RasBook needs camera access for video calls.",
         "NSMicrophoneUsageDescription": "RasBook needs microphone access for voice and video calls.",
-        "UIBackgroundModes": [
-          "voip",
-          "audio",
-          "fetch",
-          "remote-notification"
-        ]
+        "UIBackgroundModes": ["voip", "audio", "fetch", "remote-notification"]
       }
     },
     "android": {
@@ -68,7 +63,9 @@
             "compileSdkVersion": 34,
             "targetSdkVersion": 34,
             "minSdkVersion": 24,
-            "kotlinVersion": "1.9.10"
+            "kotlinVersion": "1.9.10",
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
           },
           "ios": {
             "deploymentTarget": "13.4"
