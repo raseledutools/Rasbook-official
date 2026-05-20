@@ -20,11 +20,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-${{ hashFiles('package.json') }}
+          restore-keys: node-
+
       - name: Install dependencies
         run: npm install --legacy-peer-deps
+
       - name: Run lint
         run: npm run lint || true
 
@@ -42,6 +52,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-${{ hashFiles('package.json') }}
+          restore-keys: node-
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps
@@ -70,7 +87,6 @@ jobs:
           INDEX="./dist/index.html"
           if [ -f "$INDEX" ]; then
             sed -i "s|</head>|$FONT_CSS</head>|" "$INDEX"
-            echo "Font CSS injected"
           fi
 
       - name: Fix asset paths for GitHub Pages
@@ -86,7 +102,7 @@ jobs:
           publish_branch: gh-pages
 
   # ─────────────────────────────────────────
-  # 3. Android APK (EAS ছাড়া, local Gradle)
+  # 3. Android APK — EAS ছাড়া, local Gradle
   # ─────────────────────────────────────────
   build-android:
     name: 🤖 Build Android APK
@@ -106,8 +122,35 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      # node_modules cache — প্রতিবার npm install না করে cache থেকে নেবে
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-${{ hashFiles('package.json') }}
+          restore-keys: node-
+
       - name: Install dependencies
         run: npm install --legacy-peer-deps
+
+      # Gradle cache — সবচেয়ে বড় time saver (~5-8 min বাঁচে)
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/.gradle
+          key: gradle-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      # Expo prebuild cache — android folder cache করে রাখে
+      - name: Cache expo prebuild
+        uses: actions/cache@v4
+        with:
+          path: android
+          key: prebuild-${{ hashFiles('app.json', 'package.json') }}
+          restore-keys: prebuild-
 
       - name: Expo Prebuild — generate android folder
         run: npx expo prebuild --platform android --no-install
@@ -117,20 +160,21 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: gradle-
+      - name: Enable ABI split in build.gradle
+        run: |
+          GRADLE_FILE="android/app/build.gradle"
+          if ! grep -q "abiFilters" "$GRADLE_FILE"; then
+            sed -i '/defaultConfig {/a\        ndk {\n            abiFilters "arm64-v8a"\n        }' "$GRADLE_FILE"
+          fi
 
       - name: Build Release APK
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --parallel --build-cache
         env:
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -Dorg.gradle.daemon=false"
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true"
+
+      - name: Show APK size
+        run: find android/app/build/outputs/apk/release/ -name "*.apk" -exec ls -lh {} \;
 
       - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v2
@@ -139,11 +183,10 @@ jobs:
           name: "📱 RasBook APK — Build #${{ github.run_number }}"
           body: |
             ## RasBook Android APK — Build #${{ github.run_number }}
-
             **Commit:** `${{ github.sha }}`
 
             ### ⬇️ Install
-            1. `rasbook.apk` download করো
+            1. `app-release.apk` download করো
             2. Settings → Security → Unknown Sources → Allow
             3. APK install করো
           files: android/app/build/outputs/apk/release/app-release*.apk
