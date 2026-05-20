@@ -151,8 +151,8 @@ export default function LoginScreen() {
   const isLoading = loading || !auth;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: Colors.bgGray }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView style={{ backgroundColor: Colors.bgGray }} contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
         <View style={s.logoWrap}>
           <Text style={s.logo}>
             <Text style={{ color: Colors.primary }}>Ras</Text>
@@ -266,6 +266,7 @@ const s = StyleSheet.create({
   container: {
     flexGrow: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.bgGray, padding: 20,
+    minHeight: '100%',
   },
   logoWrap: { alignItems: 'center', marginBottom: 24 },
   logo: { fontSize: 52, fontWeight: '900', letterSpacing: -1 },

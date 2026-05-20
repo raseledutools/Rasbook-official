@@ -136,7 +136,7 @@ function RootApp() {
 
 export default function App() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#F0F2F5' }}>
       <SafeAreaProvider>
         <AuthProvider>
           <RootApp />
