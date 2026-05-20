@@ -11,10 +11,7 @@ import LoginScreen from './src/screens/LoginScreen';
 import { Colors } from './src/utils/theme';
 import { registerForPushNotifications } from './src/services/notificationService';
 import {
-  setupCallKeep,
-  showIncomingCall,
-  endCallKeep,
-  registerCallKeepListeners,
+  setupCallKeep, showIncomingCall, endCallKeep, registerCallKeepListeners,
 } from './src/services/callKeepService';
 
 // CallKeep — app launch-এই একবার setup
@@ -29,6 +26,10 @@ function RootApp() {
   const fcmUnsubRef = useRef(null);
   const callKeepUnsubRef = useRef(null);
 
+  // ── Pending call data — CallKeep answer করার সময় সাথে রাখো ─────────────
+  // FCM message থেকে callId + callerUid আসে, CallKeep answer-এ pass করো
+  const pendingCallRef = useRef(null); // { callId, callerUid, callerName }
+
   useEffect(() => {
     if (!user || Platform.OS === 'web') return;
 
@@ -40,7 +41,13 @@ function RootApp() {
       fcmUnsubRef.current = messaging.default().onMessage(async (remoteMessage) => {
         const data = remoteMessage?.data;
         if (data?.type === 'incoming_call') {
-          // Native phone-style full-screen call screen
+          // callId + callerUid save করো — answer করলে Messenger-এ pass হবে
+          pendingCallRef.current = {
+            callId: data.callId,
+            callerUid: data.callerUid,
+            callerName: data.callerName,
+          };
+          // Native full-screen call screen
           showIncomingCall(
             data.callerName || 'Unknown',
             data.callId,
@@ -51,23 +58,58 @@ function RootApp() {
 
       // Background state — notification tap করলে
       messaging.default().onNotificationOpenedApp((remoteMessage) => {
-        if (remoteMessage?.data?.type === 'incoming_call') {
-          navigationRef.current?.navigate('Messenger');
+        const data = remoteMessage?.data;
+        if (data?.type === 'incoming_call') {
+          // ✅ FIX: callerUid সহ navigate করো
+          navigationRef.current?.navigate('Messenger', {
+            incomingCallId: data.callId,
+            callerUid: data.callerUid,
+          });
         }
       });
+
+      // App killed থেকে open — getInitialNotification দিয়ে check করো
+      messaging.default().getInitialNotification().then((remoteMessage) => {
+        if (remoteMessage?.data?.type === 'incoming_call') {
+          const d = remoteMessage.data;
+          pendingCallRef.current = { callId: d.callId, callerUid: d.callerUid, callerName: d.callerName };
+          setTimeout(() => {
+            navigationRef.current?.navigate('Messenger', {
+              incomingCallId: d.callId,
+              callerUid: d.callerUid,
+            });
+          }, 1000); // navigation ready হওয়ার জন্য delay
+        }
+      }).catch(() => {});
     }).catch(() => {});
 
     // 3. CallKeep answer/reject listener
+    // ✅ FIX: answer করলে pendingCallRef থেকে callerUid নিয়ে navigate করো
     callKeepUnsubRef.current = registerCallKeepListeners(
-      (callUUID) => navigationRef.current?.navigate('Messenger'), // Answer
-      (callUUID) => endCallKeep(callUUID)                         // Decline
+      (callUUID) => {
+        // Answer — Messenger screen খোলো + caller contact খুঁজে show করো
+        const pending = pendingCallRef.current;
+        navigationRef.current?.navigate('Messenger', {
+          incomingCallId: callUUID || pending?.callId,
+          callerUid: pending?.callerUid,
+        });
+        pendingCallRef.current = null;
+      },
+      (callUUID) => {
+        endCallKeep(callUUID);
+        pendingCallRef.current = null;
+      }
     );
 
     // 4. Expo notification tap (fallback)
     import('expo-notifications').then((N) => {
       notifResponseRef.current = N.addNotificationResponseReceivedListener((r) => {
-        if (r?.notification?.request?.content?.data?.type === 'incoming_call') {
-          navigationRef.current?.navigate('Messenger');
+        const data = r?.notification?.request?.content?.data;
+        if (data?.type === 'incoming_call') {
+          navigationRef.current?.navigate('Messenger', {
+            incomingCallId: data.callId,
+            callerUid: data.callerUid,
+          });
         }
       });
     }).catch(() => {});

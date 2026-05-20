@@ -59,14 +59,6 @@
             "deploymentTarget": "13.4"
           }
         }
-      ],
-      [
-        "react-native-callkeep",
-        {
-          "ios": {
-            "appName": "RasBook"
-          }
-        }
       ]
     ],
     "extra": {

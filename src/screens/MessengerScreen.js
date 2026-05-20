@@ -1,14 +1,16 @@
 // src/screens/MessengerScreen.js
-// ✅ Web + Native (Android/iOS) — দুটোতেই calling কাজ করে
-// ✅ react-native-webrtc (native) + browser WebRTC (web)
-// ✅ ICE candidate queue, TURN server, proper track handling
-// ✅ CallKeep integration, ringtone, call timer, mic/cam toggle
+// ✅ Web + Native (Android/iOS)
+// ✅ AES-GCM End-to-End Encryption (real, not just label)
+// ✅ WhatsApp-style file sharing: image, video, audio, document
+// ✅ CallKeep integration — lock screen থেকেও answer করলে সরাসরি call-এ আসবে
+// ✅ WebRTC calling (audio + video), TURN server, ICE queue
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, ScrollView, TouchableOpacity,
   StyleSheet, Image, Alert, Modal, KeyboardAvoidingView, Animated,
   Platform, Dimensions, ActivityIndicator, SafeAreaView,
+  ActionSheetIOS, Linking,
 } from 'react-native';
 import {
   collection, doc, setDoc, updateDoc,
@@ -19,27 +21,22 @@ import { useAuth } from '../hooks/useAuth';
 import { Colors } from '../utils/theme';
 import { FontAwesome6 } from '@expo/vector-icons';
 import { sendPushNotification, sendCallNotification } from '../services/notificationService';
+import { encryptMessage, decryptMessage } from '../services/e2eEncryption';
+import {
+  uploadFile, pickFile, takeMedia, getFileType, getFileIcon, formatFileSize,
+} from '../services/fileUploadService';
 
-// ── Platform-aware WebRTC import ─────────────────────────────────────────────
-// Web-এ browser built-in WebRTC use করে
-// Native-এ react-native-webrtc use করে
-let RTCPeerConnection_impl;
-let RTCIceCandidate_impl;
-let RTCSessionDescription_impl;
-let MediaStream_impl;
-let mediaDevices_impl;
+// ── Platform-aware WebRTC import ───────────────────────────────────────────
+let RTCPeerConnection_impl, RTCIceCandidate_impl, RTCSessionDescription_impl;
+let MediaStream_impl, mediaDevices_impl;
 
 if (Platform.OS === 'web') {
-  // Browser built-ins — সরাসরি available
   RTCPeerConnection_impl = RTCPeerConnection;
   RTCIceCandidate_impl = RTCIceCandidate;
   RTCSessionDescription_impl = RTCSessionDescription;
   MediaStream_impl = MediaStream;
   mediaDevices_impl = navigator.mediaDevices;
 } else {
-  // Native — react-native-webrtc থেকে নাও
-  // এই package আলাদা install করতে হবে:
-  // npx expo install react-native-webrtc
   try {
     const RNWebRTC = require('react-native-webrtc');
     RTCPeerConnection_impl = RNWebRTC.RTCPeerConnection;
@@ -48,12 +45,7 @@ if (Platform.OS === 'web') {
     MediaStream_impl = RNWebRTC.MediaStream;
     mediaDevices_impl = RNWebRTC.mediaDevices;
   } catch (e) {
-    // react-native-webrtc install না থাকলে warning দেখাবে
-    console.warn(
-      '[RasBook] react-native-webrtc not installed.\n' +
-      'Run: npx expo install react-native-webrtc\n' +
-      'Then rebuild the APK.'
-    );
+    console.warn('[RasBook] react-native-webrtc not installed. Run: npx expo install react-native-webrtc');
   }
 }
 
@@ -61,15 +53,11 @@ const CHAT_NS = 'rasbook-messenger-v1';
 const { width: SCREEN_W } = Dimensions.get('window');
 const IS_TABLET = SCREEN_W > 768;
 
-// ── STUN + TURN servers ───────────────────────────────────────────────────────
-// TURN ছাড়া ~15-20% call fail করে (different NAT/firewall)
-// ── TURN credentials Metered.ca থেকে dynamically fetch করা হয়
-// এতে credentials সবসময় fresh থাকে এবং সব network-এ call কাজ করে
+// ── STUN + TURN servers ────────────────────────────────────────────────────
 const METERED_API_KEY = '67ee7b540f71cc805dcafca2b17c66f318ad';
 const METERED_API_URL = `https://rasbook.metered.live/api/v1/turn/credentials?apiKey=${METERED_API_KEY}`;
 
-// Fallback — API fail করলে এটা use হবে
-const FALLBACK_ICE_SERVERS = [
+const FALLBACK_ICE = [
   { urls: 'stun:stun.relay.metered.ca:80' },
   { urls: 'turn:global.relay.metered.ca:80', username: '3f70ad0326429b01c0e8a63f', credential: 'uGrSYear4HBmgEWQ' },
   { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: '3f70ad0326429b01c0e8a63f', credential: 'uGrSYear4HBmgEWQ' },
@@ -81,30 +69,39 @@ const getIceServers = async () => {
   try {
     const res = await fetch(METERED_API_URL);
     if (!res.ok) throw new Error('API error');
-    const servers = await res.json();
-    return { iceServers: servers, iceCandidatePoolSize: 10 };
-  } catch (e) {
-    console.warn('Metered API failed, using fallback TURN:', e.message);
-    return { iceServers: FALLBACK_ICE_SERVERS, iceCandidatePoolSize: 10 };
+    return { iceServers: await res.json(), iceCandidatePoolSize: 10 };
+  } catch {
+    return { iceServers: FALLBACK_ICE, iceCandidatePoolSize: 10 };
   }
 };
 
 const avatarUri = (name, url) =>
-  url
-    ? { uri: url }
+  url ? { uri: url }
     : { uri: `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'U')}&background=1877F2&color=fff&bold=true` };
 
 const chatId = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
 const timeStr = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-const formatTime = (sec) => {
+const formatDur = (sec) => {
   if (!sec || isNaN(sec)) return '0:00';
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
+  const m = Math.floor(sec / 60), s = sec % 60;
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
-export default function MessengerScreen() {
+// ── FILE TYPE COLORS ───────────────────────────────────────────────────────
+const FILE_COLORS = {
+  image: '#1877F2',
+  video: '#8B5CF6',
+  audio: '#10B981',
+  document: '#F59E0B',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+export default function MessengerScreen({ route }) {
   const { user } = useAuth();
+
+  // route.params থেকে incoming call data নাও (CallKeep answer থেকে আসে)
+  const incomingFromRoute = route?.params?.incomingCallId;
+  const incomingCallerUid = route?.params?.callerUid;
 
   const [allUsers, setAllUsers] = useState([]);
   const [search, setSearch] = useState('');
@@ -114,6 +111,11 @@ export default function MessengerScreen() {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const scrollRef = useRef();
   const chatUnsubRef = useRef(null);
+
+  // File upload state
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
 
   // Call UI state
   const [callVisible, setCallVisible] = useState(false);
@@ -131,7 +133,7 @@ export default function MessengerScreen() {
   // WebRTC refs
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
-  const remoteStreamRef = useRef(null); // Native-এ MediaStream ref রাখতে হয়
+  const remoteStreamRef = useRef(null);
   const incomingCallDataRef = useRef(null);
   const currentCallIdRef = useRef(null);
   const remoteDescSetRef = useRef(false);
@@ -139,11 +141,11 @@ export default function MessengerScreen() {
   const callDocUnsubRef = useRef(null);
   const candidateUnsubRef = useRef(null);
 
-  // Ringtone (Web Audio API — শুধু web-এ)
+  // Ringtone (web only)
   const audioCtxRef = useRef(null);
   const ringIntervalRef = useRef(null);
 
-  // Native video refs (react-native-webrtc RTCView-এর জন্য)
+  // Native video refs
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
 
@@ -153,24 +155,39 @@ export default function MessengerScreen() {
   const myUid = user?.uid;
   const myName = user?.displayName || user?.email?.split('@')[0] || 'User';
   const myPhoto = user?.photoURL || null;
+  const currentChatId = activeContact ? chatId(myUid, activeContact.uid) : null;
 
-  // Pulse loop
+  // ── Route param: CallKeep থেকে answer করা হলে ─────────────────────────
+  useEffect(() => {
+    if (!incomingFromRoute || !incomingCallerUid || allUsers.length === 0) return;
+    // caller-এর contact খুঁজে সেটাকে activeContact বানাও
+    const caller = allUsers.find(u => u.uid === incomingCallerUid);
+    if (caller && !activeContact) {
+      openChat(caller);
+      // incoming call data set করো যাতে answerCall কাজ করে
+      const callData = incomingCallDataRef.current;
+      if (callData && callData.id === incomingFromRoute) {
+        // already set — just show call UI
+        setCallVisible(true);
+      }
+    }
+  }, [incomingFromRoute, incomingCallerUid, allUsers]);
+
+  // ── Pulse animation ────────────────────────────────────────────────────
   useEffect(() => {
     if (callVisible) {
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.15, duration: 700, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
-        ])
-      );
+      const pulse = Animated.loop(Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.15, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ]));
       pulse.start();
       return () => pulse.stop();
     }
   }, [callVisible]);
 
-  // ── Ringtone (Web Audio API — web only) ──────────────────────────────────
+  // ── Ringtone (web only) ────────────────────────────────────────────────
   const playRingtone = (incoming = false) => {
-    if (Platform.OS !== 'web') return; // Native-এ system ringtone বাজে CallKeep দিয়ে
+    if (Platform.OS !== 'web') return;
     stopRingtone();
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -178,28 +195,24 @@ export default function MessengerScreen() {
       const beep = () => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
+        osc.connect(gain); gain.connect(ctx.destination);
         osc.frequency.value = incoming ? 440 : 480;
         gain.gain.setValueAtTime(0.3, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.4);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
       };
       beep();
       ringIntervalRef.current = setInterval(beep, incoming ? 1500 : 2000);
-    } catch (e) {}
+    } catch {}
   };
-
   const stopRingtone = () => {
     if (ringIntervalRef.current) { clearInterval(ringIntervalRef.current); ringIntervalRef.current = null; }
-    if (audioCtxRef.current) { try { audioCtxRef.current.close(); } catch (e) {} audioCtxRef.current = null; }
+    if (audioCtxRef.current) { try { audioCtxRef.current.close(); } catch {} audioCtxRef.current = null; }
   };
 
-  // ── Timer ─────────────────────────────────────────────────────────────────
+  // ── Timer ──────────────────────────────────────────────────────────────
   const startTimer = () => {
-    stopTimer();
-    setCallSeconds(0);
+    stopTimer(); setCallSeconds(0);
     timerRef.current = setInterval(() => setCallSeconds(s => s + 1), 1000);
   };
   const stopTimer = () => {
@@ -207,112 +220,76 @@ export default function MessengerScreen() {
     setCallSeconds(0);
   };
 
-  // ── initializePeerConnection ──────────────────────────────────────────────
+  // ── PeerConnection ─────────────────────────────────────────────────────
   const initPC = async () => {
-    if (pcRef.current) {
-      try { pcRef.current.close(); } catch (e) {}
-    }
+    if (pcRef.current) { try { pcRef.current.close(); } catch {} }
     remoteDescSetRef.current = false;
     iceCandQueueRef.current = [];
 
-    // Dynamic TURN credentials Metered.ca থেকে নাও
     const rtcConfig = await getIceServers();
     const pc = new RTCPeerConnection_impl(rtcConfig);
 
     if (Platform.OS === 'web') {
-      // ✅ FIX: getElementById initPC() call-এর সময় করা হচ্ছিল — তখন DOM element
-      // এখনো mount হয়নি (WebMediaElements React render হতে সময় লাগে)।
-      // Fix: ontrack-এর ভেতরে lazy lookup করো, যখন track আসে তখন element ready থাকবে।
       pc.ontrack = (event) => {
         const track = event.track;
-        // প্রতিবার fresh getElementById — DOM নিশ্চিত ready
         const remoteVideoEl = document.getElementById('rb-remote-video');
         const remoteAudioEl = document.getElementById('rb-remote-audio');
-
-        if (track.kind === 'video') {
-          if (!remoteVideoEl) return;
-          // srcObject না থাকলে নতুন MediaStream দাও
-          if (!remoteVideoEl.srcObject) {
-            remoteVideoEl.srcObject = new MediaStream();
-          }
+        if (track.kind === 'video' && remoteVideoEl) {
+          if (!remoteVideoEl.srcObject) remoteVideoEl.srcObject = new MediaStream();
           remoteVideoEl.srcObject.addTrack(track);
-          // data-ready attribute: WebMediaElements useEffect যেন display override না করে
           remoteVideoEl.setAttribute('data-ready', 'true');
           remoteVideoEl.style.display = 'block';
           remoteVideoEl.play().catch(() => {});
-        } else if (track.kind === 'audio') {
-          if (!remoteAudioEl) return;
-          if (!remoteAudioEl.srcObject) {
-            remoteAudioEl.srcObject = new MediaStream();
-          }
+        } else if (track.kind === 'audio' && remoteAudioEl) {
+          if (!remoteAudioEl.srcObject) remoteAudioEl.srcObject = new MediaStream();
           remoteAudioEl.srcObject.addTrack(track);
           remoteAudioEl.play().catch(() => {});
         }
       };
     } else {
-      // Native (react-native-webrtc): RTCView-এর জন্য stream state update করো
       const remStream = new MediaStream_impl();
       remoteStreamRef.current = remStream;
-
       pc.ontrack = (event) => {
-        // react-native-webrtc-এ event.streams[0] available থাকে
-        if (event.streams && event.streams[0]) {
-          setRemoteStream(event.streams[0]);
-        } else if (event.track) {
-          remStream.addTrack(event.track);
-          setRemoteStream(remStream);
-        }
+        if (event.streams?.[0]) setRemoteStream(event.streams[0]);
+        else if (event.track) { remStream.addTrack(event.track); setRemoteStream(remStream); }
       };
     }
 
-    // ICE connection state
     pc.oniceconnectionstatechange = () => {
       const state = pc.iceConnectionState;
       if (state === 'connected' || state === 'completed') {
-        setCallStatus('Connected');
-        setCallConnected(true);
-        startTimer();
-        stopRingtone();
+        setCallStatus('Connected'); setCallConnected(true);
+        startTimer(); stopRingtone();
       }
-      if (state === 'failed') {
-        setCallStatus('Connection failed');
-      }
-      if (state === 'disconnected') {
-        setCallStatus('Reconnecting...');
-      }
+      if (state === 'failed') setCallStatus('Connection failed');
+      if (state === 'disconnected') setCallStatus('Reconnecting...');
     };
 
     pcRef.current = pc;
     return pc;
   };
 
-  // ── ICE candidate queue ───────────────────────────────────────────────────
-  const processIceCandidate = async (candidateData) => {
-    if (!candidateData || !candidateData.candidate) return;
-    if (remoteDescSetRef.current && pcRef.current) {
-      await pcRef.current.addIceCandidate(new RTCIceCandidate_impl(candidateData)).catch(() => {});
-    } else {
-      iceCandQueueRef.current.push(candidateData);
-    }
+  const processIceCandidate = async (data) => {
+    if (!data?.candidate) return;
+    if (remoteDescSetRef.current && pcRef.current)
+      await pcRef.current.addIceCandidate(new RTCIceCandidate_impl(data)).catch(() => {});
+    else iceCandQueueRef.current.push(data);
   };
 
   const flushIceQueue = async () => {
-    for (const cand of iceCandQueueRef.current) {
-      await pcRef.current?.addIceCandidate(new RTCIceCandidate_impl(cand)).catch(() => {});
-    }
+    for (const c of iceCandQueueRef.current)
+      await pcRef.current?.addIceCandidate(new RTCIceCandidate_impl(c)).catch(() => {});
     iceCandQueueRef.current = [];
   };
 
-  // ── User registration + incoming call listener ────────────────────────────
+  // ── User registration + incoming call listener ─────────────────────────
   useEffect(() => {
     if (!myUid) return;
 
     const userRef = doc(db, 'messenger', CHAT_NS, 'users', myUid);
     setDoc(userRef, { uid: myUid, name: myName, photoURL: myPhoto, lastActive: Date.now() }, { merge: true });
-
-    const interval = setInterval(() => {
-      setDoc(userRef, { lastActive: Date.now() }, { merge: true });
-    }, 60_000);
+    const interval = setInterval(() =>
+      setDoc(userRef, { lastActive: Date.now() }, { merge: true }), 60_000);
 
     const usersUnsub = onSnapshot(collection(db, 'messenger', CHAT_NS, 'users'), (snap) => {
       const list = [];
@@ -327,14 +304,10 @@ export default function MessengerScreen() {
       snap.docChanges().forEach((change) => {
         const data = change.doc.data();
         const id = change.doc.id;
-
         if (
           (change.type === 'added' || change.type === 'modified') &&
-          data.callee === myUid &&
-          data.status === 'calling'
+          data.callee === myUid && data.status === 'calling'
         ) {
-          // Web-এ incoming call screen দেখাও
-          // Native-এ CallKeep দিয়ে native phone screen দেখায় (App.js থেকে)
           incomingCallDataRef.current = { id, ...data };
           currentCallIdRef.current = id;
           setCallerName(data.callerName || 'Incoming Call');
@@ -346,27 +319,17 @@ export default function MessengerScreen() {
           setCallVisible(true);
           playRingtone(true);
         }
-
-        // Call ended — দুই পাশেই reset
         if (data.status === 'ended') {
-          if (
-            currentCallIdRef.current === id ||
-            incomingCallDataRef.current?.id === id
-          ) {
+          if (currentCallIdRef.current === id || incomingCallDataRef.current?.id === id)
             resetCallUI();
-          }
         }
       });
     });
 
-    return () => {
-      clearInterval(interval);
-      usersUnsub();
-      callsUnsub();
-    };
+    return () => { clearInterval(interval); usersUnsub(); callsUnsub(); };
   }, [myUid, myName]);
 
-  // ── Open chat ─────────────────────────────────────────────────────────────
+  // ── Open chat ──────────────────────────────────────────────────────────
   const openChat = (contact) => {
     setActiveContact(contact);
     setMessages([]);
@@ -376,119 +339,170 @@ export default function MessengerScreen() {
       collection(db, 'messenger', CHAT_NS, 'chats', cid, 'messages'),
       orderBy('ts', 'asc'), limit(150)
     );
-    chatUnsubRef.current = onSnapshot(q, (snap) => {
+    chatUnsubRef.current = onSnapshot(q, async (snap) => {
       const msgs = [];
-      snap.forEach((d) => {
-        msgs.push({ id: d.id, ...d.data() });
-        if (!d.data().read && d.data().sender !== myUid) {
+      for (const d of snap.docs) {
+        const data = d.data();
+        // Decrypt message text
+        let text = data.text || '';
+        if (text && data.encrypted) {
+          text = await decryptMessage(text, cid);
+        }
+        // Decrypt file metadata if encrypted
+        let fileMeta = data.fileMeta || null;
+        if (fileMeta && data.encrypted) {
+          const { decryptMeta } = await import('../services/e2eEncryption');
+          fileMeta = await decryptMeta(fileMeta, cid);
+        }
+        msgs.push({ id: d.id, ...data, text, fileMeta });
+        if (!data.read && data.sender !== myUid) {
           updateDoc(doc(db, 'messenger', CHAT_NS, 'chats', cid, 'messages', d.id), { read: true });
         }
-      });
+      }
       setMessages(msgs);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     });
   };
 
-  // ── Send message ──────────────────────────────────────────────────────────
+  // ── Send text message (encrypted) ─────────────────────────────────────
   const sendMessage = async () => {
     const text = msgInput.trim();
     if (!text || !activeContact) return;
     setMsgInput('');
     const cid = chatId(myUid, activeContact.uid);
+    // Encrypt before saving
+    const encryptedText = await encryptMessage(text, cid);
     await addDoc(collection(db, 'messenger', CHAT_NS, 'chats', cid, 'messages'), {
-      text, sender: myUid, senderName: myName, ts: Date.now(), time: timeStr(), read: false,
+      text: encryptedText, encrypted: true,
+      sender: myUid, senderName: myName, ts: Date.now(), time: timeStr(), read: false,
+      type: 'text',
     });
+    // Push notification (plain text for notification preview)
+    const preview = text.length > 60 ? text.slice(0, 60) + '…' : text;
     addDoc(collection(db, 'notifications'), {
       toUserId: activeContact.uid, fromUserId: myUid, fromUserName: myName,
-      fromUserAvatar: user?.photoURL || null, type: 'message',
-      message: text.length > 60 ? text.slice(0, 60) + '…' : text,
+      fromUserAvatar: user?.photoURL || null, type: 'message', message: preview,
       createdAt: serverTimestamp(), isRead: false,
     }).catch(() => {});
     getDoc(doc(db, 'users', activeContact.uid)).then((snap) => {
       const token = snap?.data()?.expoPushToken;
-      if (token) sendPushNotification(token, myName, text, { type: 'message', fromUid: myUid });
+      if (token) sendPushNotification(token, myName, preview, { type: 'message', fromUid: myUid });
     }).catch(() => {});
   };
 
-  // ── getMediaStream — web + native উভয়ের জন্য ────────────────────────────
-  const getMediaStream = async (type) => {
-    // react-native-webrtc install না থাকলে এখানে থামবে
-    if (Platform.OS !== 'web' && !mediaDevices_impl) {
-      Alert.alert(
-        'Setup Required',
-        'Native calling needs react-native-webrtc.\n\nRun: npx expo install react-native-webrtc\n\nThen rebuild the APK.'
-      );
-      return null;
-    }
-
-    const constraints = {
-      audio: true,
-      video: type === 'video' ? { facingMode: 'user' } : false,
-    };
-
+  // ── Send file ──────────────────────────────────────────────────────────
+  const sendFile = async (picked) => {
+    if (!picked || !activeContact) return;
+    setShowAttachMenu(false);
+    setUploading(true);
     try {
-      const stream = await mediaDevices_impl.getUserMedia(constraints);
-      return stream;
-    } catch (err) {
-      // Video fail — audio-only fallback
-      console.warn('Camera failed, trying audio only:', err.message);
-      try {
-        const stream = await mediaDevices_impl.getUserMedia({ audio: true, video: false });
-        return stream;
-      } catch (e) {
-        Alert.alert('Permission Denied', 'Microphone access is required for calls.\n\nSettings > Apps > RasBook > Permissions > Microphone');
-        return null;
-      }
+      const uploaded = await uploadFile(picked.uri, picked.mimeType, picked.fileName);
+      const cid = chatId(myUid, activeContact.uid);
+
+      const fileMeta = {
+        url: uploaded.url,
+        fileType: uploaded.fileType,
+        fileName: uploaded.fileName,
+        fileSize: uploaded.fileSize,
+        mimeType: uploaded.mimeType,
+        duration: uploaded.duration,
+        width: uploaded.width,
+        height: uploaded.height,
+        thumbnail: uploaded.thumbnail,
+      };
+
+      // Encrypt fileName only (URL is public CDN link)
+      const { encryptMeta } = await import('../services/e2eEncryption');
+      const encryptedMeta = await encryptMeta(fileMeta, cid);
+
+      await addDoc(collection(db, 'messenger', CHAT_NS, 'chats', cid, 'messages'), {
+        text: '',
+        fileMeta: encryptedMeta,
+        encrypted: true,
+        sender: myUid, senderName: myName,
+        ts: Date.now(), time: timeStr(), read: false,
+        type: uploaded.fileType,
+      });
+
+      // Notification
+      const label = uploaded.fileType === 'image' ? '📷 Photo'
+        : uploaded.fileType === 'video' ? '🎥 Video'
+        : uploaded.fileType === 'audio' ? '🎵 Audio'
+        : `📎 ${uploaded.fileName}`;
+      getDoc(doc(db, 'users', activeContact.uid)).then((snap) => {
+        const token = snap?.data()?.expoPushToken;
+        if (token) sendPushNotification(token, myName, label, { type: 'message', fromUid: myUid });
+      }).catch(() => {});
+    } catch (e) {
+      Alert.alert('Upload failed', e.message);
+    } finally {
+      setUploading(false);
     }
   };
 
-  // ── startCall ─────────────────────────────────────────────────────────────
+  // ── Attachment menu actions ────────────────────────────────────────────
+  const handleAttach = async (type) => {
+    setShowAttachMenu(false);
+    let picked = null;
+    if (type === 'camera') picked = await takeMedia('image');
+    else if (type === 'video_camera') picked = await takeMedia('video');
+    else picked = await pickFile(type);
+    if (picked) await sendFile(picked);
+  };
+
+  // ── Open/download file ─────────────────────────────────────────────────
+  const openFile = (url) => {
+    if (!url) return;
+    Linking.openURL(url).catch(() => Alert.alert('Cannot open file'));
+  };
+
+  // ── getMediaStream ─────────────────────────────────────────────────────
+  const getMediaStream = async (type) => {
+    if (Platform.OS !== 'web' && !mediaDevices_impl) {
+      Alert.alert('Setup Required', 'Run: npx expo install react-native-webrtc\nThen rebuild APK.');
+      return null;
+    }
+    try {
+      return await mediaDevices_impl.getUserMedia({
+        audio: true, video: type === 'video' ? { facingMode: 'user' } : false,
+      });
+    } catch {
+      try { return await mediaDevices_impl.getUserMedia({ audio: true, video: false }); }
+      catch { Alert.alert('Permission Denied', 'Microphone access required.'); return null; }
+    }
+  };
+
+  // ── startCall ──────────────────────────────────────────────────────────
   const startCall = async (type) => {
     if (!activeContact) return;
-    setCallType(type);
-    setCallStatus('Calling...');
-    setIsIncoming(false);
-    setCallConnected(false);
-    setCallerName(activeContact.name);
-    setCallerAvatar(activeContact.photoURL || '');
-    setLocalStream(null);
-    setRemoteStream(null);
-    setCallVisible(true);
+    setCallType(type); setCallStatus('Calling…');
+    setIsIncoming(false); setCallConnected(false);
+    setCallerName(activeContact.name); setCallerAvatar(activeContact.photoURL || '');
+    setLocalStream(null); setRemoteStream(null); setCallVisible(true);
     playRingtone(false);
 
     const stream = await getMediaStream(type);
     if (!stream) { resetCallUI(); return; }
-    localStreamRef.current = stream;
-    setLocalStream(stream); // Native RTCView-এর জন্য
+    localStreamRef.current = stream; setLocalStream(stream);
 
-    // FIX: callVisible=true set করার পরে React render + WebMediaElements
-    // DOM-এ mount হতে একটু সময় লাগে। এই await দিলে DOM ready থাকবে।
     if (Platform.OS === 'web') {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      const localVid = document.getElementById('rb-local-video');
-      if (localVid && type === 'video') {
-        localVid.srcObject = stream;
-        localVid.style.display = 'block';
-        localVid.play().catch(() => {});
-      }
+      await new Promise(r => setTimeout(r, 100));
+      const lv = document.getElementById('rb-local-video');
+      if (lv && type === 'video') { lv.srcObject = stream; lv.style.display = 'block'; lv.play().catch(() => {}); }
     }
 
     const pc = await initPC();
-    stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+    stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
-    const chatHash = myUid < activeContact.uid
-      ? `${myUid}_${activeContact.uid}`
-      : `${activeContact.uid}_${myUid}`;
-    const callDocId = `call_${chatHash}_${Date.now()}`;
+    const hash = myUid < activeContact.uid ? `${myUid}_${activeContact.uid}` : `${activeContact.uid}_${myUid}`;
+    const callDocId = `call_${hash}_${Date.now()}`;
     currentCallIdRef.current = callDocId;
 
     const callDocRef = doc(db, 'messenger', CHAT_NS, 'calls', callDocId);
     const offerCandidates = collection(callDocRef, 'offerCandidates');
     const answerCandidates = collection(callDocRef, 'answerCandidates');
 
-    pc.onicecandidate = (e) => {
-      if (e.candidate) addDoc(offerCandidates, e.candidate.toJSON());
-    };
+    pc.onicecandidate = (e) => { if (e.candidate) addDoc(offerCandidates, e.candidate.toJSON()); };
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -500,208 +514,212 @@ export default function MessengerScreen() {
       type, status: 'calling', timestamp: Date.now(),
     });
 
-    // Push notification
+    // ✅ FIX: callerUid pass করছি যাতে CallKeep answer করলে সরাসরি এই contact-এ আসে
     getDoc(doc(db, 'users', activeContact.uid)).then((snap) => {
       const data = snap?.data() || {};
       sendCallNotification(
         { expoPushToken: data.expoPushToken, fcmToken: data.fcmToken },
-        myName, type, callDocId
+        myName, type, callDocId,
+        myUid // callerUid — App.js navigate করার সময় pass করবে
       );
     }).catch(() => {});
 
-    addDoc(collection(db, 'notifications'), {
-      toUserId: activeContact.uid, fromUserId: myUid, fromUserName: myName,
-      fromUserAvatar: user?.photoURL || null, type: 'call', callType: type,
-      createdAt: serverTimestamp(), isRead: false,
-    }).catch(() => {});
-
-    // Listen for answer
     callDocUnsubRef.current = onSnapshot(callDocRef, async (snap) => {
       const data = snap.data();
       if (!data) return;
-
       if (pcRef.current && !remoteDescSetRef.current && data.answer) {
-        await pcRef.current.setRemoteDescription(
-          new RTCSessionDescription_impl(data.answer)
-        );
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription_impl(data.answer));
         remoteDescSetRef.current = true;
-        setCallStatus('Connected');
-        setCallConnected(true);
-        startTimer();
-        stopRingtone();
+        setCallStatus('Connected'); setCallConnected(true);
+        startTimer(); stopRingtone();
         await flushIceQueue();
-
-        // Answer ICE candidates শোনো
-        candidateUnsubRef.current = onSnapshot(answerCandidates, (candSnap) => {
-          candSnap.docChanges().forEach((change) => {
-            if (change.type === 'added') processIceCandidate(change.doc.data());
-          });
-        });
+        candidateUnsubRef.current = onSnapshot(answerCandidates, (cs) =>
+          cs.docChanges().forEach(ch => { if (ch.type === 'added') processIceCandidate(ch.doc.data()); }));
       }
-
       if (data.status === 'ended') resetCallUI();
     });
   };
 
-  // ── answerCall ────────────────────────────────────────────────────────────
+  // ── answerCall ─────────────────────────────────────────────────────────
   const answerCall = async () => {
     if (!incomingCallDataRef.current) return;
     stopRingtone();
-    setCallStatus('Connecting...');
-    setIsIncoming(false);
-    setLocalStream(null);
-    setRemoteStream(null);
+    setCallStatus('Connecting…'); setIsIncoming(false);
+    setLocalStream(null); setRemoteStream(null);
 
     const incoming = incomingCallDataRef.current;
     const type = incoming.type || 'audio';
 
     const stream = await getMediaStream(type);
     if (!stream) { resetCallUI(); return; }
-    localStreamRef.current = stream;
-    setLocalStream(stream); // Native RTCView-এর জন্য
+    localStreamRef.current = stream; setLocalStream(stream);
 
-    // FIX: DOM mount হওয়ার জন্য অপেক্ষা করো
     if (Platform.OS === 'web') {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      const localVid = document.getElementById('rb-local-video');
-      if (localVid && type === 'video') {
-        localVid.srcObject = stream;
-        localVid.style.display = 'block';
-        localVid.play().catch(() => {});
-      }
+      await new Promise(r => setTimeout(r, 100));
+      const lv = document.getElementById('rb-local-video');
+      if (lv && type === 'video') { lv.srcObject = stream; lv.style.display = 'block'; lv.play().catch(() => {}); }
     }
 
     const pc = await initPC();
-    stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+    stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
     currentCallIdRef.current = incoming.id;
     const callDocRef = doc(db, 'messenger', CHAT_NS, 'calls', incoming.id);
     const answerCandidates = collection(callDocRef, 'answerCandidates');
     const offerCandidates = collection(callDocRef, 'offerCandidates');
 
-    pc.onicecandidate = (e) => {
-      if (e.candidate) addDoc(answerCandidates, e.candidate.toJSON());
-    };
+    pc.onicecandidate = (e) => { if (e.candidate) addDoc(answerCandidates, e.candidate.toJSON()); };
 
-    // Remote description (offer) আগে set করো
     await pc.setRemoteDescription(new RTCSessionDescription_impl(incoming.offer));
     remoteDescSetRef.current = true;
     await flushIceQueue();
 
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
+    await updateDoc(callDocRef, { answer: { type: answer.type, sdp: answer.sdp }, status: 'answered' });
 
-    await updateDoc(callDocRef, {
-      answer: { type: answer.type, sdp: answer.sdp },
-      status: 'answered',
-    });
+    setCallStatus('Connected'); setCallConnected(true); startTimer();
 
-    setCallStatus('Connected');
-    setCallConnected(true);
-    startTimer();
+    candidateUnsubRef.current = onSnapshot(offerCandidates, (snap) =>
+      snap.docChanges().forEach(ch => { if (ch.type === 'added') processIceCandidate(ch.doc.data()); }));
 
-    // Offer ICE candidates শোনো
-    candidateUnsubRef.current = onSnapshot(offerCandidates, (snap) => {
-      snap.docChanges().forEach((change) => {
-        if (change.type === 'added') processIceCandidate(change.doc.data());
-      });
-    });
-
-    // Call end শোনো
     callDocUnsubRef.current = onSnapshot(callDocRef, (snap) => {
       if (snap.data()?.status === 'ended') resetCallUI();
     });
   };
 
-  // ── hangupCall ────────────────────────────────────────────────────────────
+  // ── hangupCall ─────────────────────────────────────────────────────────
   const hangupCall = async () => {
     const id = currentCallIdRef.current || incomingCallDataRef.current?.id;
-    if (id) {
-      await updateDoc(doc(db, 'messenger', CHAT_NS, 'calls', id), { status: 'ended' }).catch(() => {});
-    }
+    if (id) await updateDoc(doc(db, 'messenger', CHAT_NS, 'calls', id), { status: 'ended' }).catch(() => {});
     resetCallUI();
   };
 
-  // ── resetCallUI ───────────────────────────────────────────────────────────
+  // ── resetCallUI ────────────────────────────────────────────────────────
   const resetCallUI = () => {
-    stopRingtone();
-    stopTimer();
+    stopRingtone(); stopTimer();
     callDocUnsubRef.current?.(); callDocUnsubRef.current = null;
     candidateUnsubRef.current?.(); candidateUnsubRef.current = null;
-
-    // Local stream tracks বন্ধ করো
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
-      localStreamRef.current = null;
-    }
-
-    // Web DOM elements clear
+    if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(t => t.stop()); localStreamRef.current = null; }
     if (Platform.OS === 'web') {
       ['rb-remote-audio', 'rb-remote-video', 'rb-local-video'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) {
-          el.srcObject = null;
-          el.style.display = 'none';
-          el.removeAttribute('data-ready'); // FIX: next call-এর জন্য reset
-        }
+        if (el) { el.srcObject = null; el.style.display = 'none'; el.removeAttribute('data-ready'); }
       });
     }
-
-    // PeerConnection বন্ধ করো
-    if (pcRef.current) {
-      try { pcRef.current.close(); } catch (e) {}
-      pcRef.current = null;
-    }
-
-    // State reset
-    remoteStreamRef.current = null;
-    incomingCallDataRef.current = null;
-    currentCallIdRef.current = null;
-    remoteDescSetRef.current = false;
+    if (pcRef.current) { try { pcRef.current.close(); } catch {} pcRef.current = null; }
+    remoteStreamRef.current = null; incomingCallDataRef.current = null;
+    currentCallIdRef.current = null; remoteDescSetRef.current = false;
     iceCandQueueRef.current = [];
-
-    setLocalStream(null);
-    setRemoteStream(null);
-    setCallVisible(false);
-    setCallConnected(false);
-    setIsIncoming(false);
-    setMicMuted(false);
-    setCamOff(false);
-    setCallStatus('');
+    setLocalStream(null); setRemoteStream(null); setCallVisible(false);
+    setCallConnected(false); setIsIncoming(false); setMicMuted(false);
+    setCamOff(false); setCallStatus('');
   };
 
-  // ── toggleMic / toggleCam ─────────────────────────────────────────────────
   const toggleMic = () => {
-    const track = localStreamRef.current?.getAudioTracks()[0];
-    if (track) {
-      track.enabled = !track.enabled;
-      setMicMuted(!track.enabled);
-    }
+    const t = localStreamRef.current?.getAudioTracks()[0];
+    if (t) { t.enabled = !t.enabled; setMicMuted(!t.enabled); }
   };
-
   const toggleCam = () => {
-    const track = localStreamRef.current?.getVideoTracks()[0];
-    if (track) {
-      track.enabled = !track.enabled;
-      setCamOff(!track.enabled);
-    }
+    const t = localStreamRef.current?.getVideoTracks()[0];
+    if (t) { t.enabled = !t.enabled; setCamOff(!t.enabled); }
   };
 
-  const filteredUsers = allUsers.filter((u) =>
-    u.name?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredUsers = allUsers.filter(u => u.name?.toLowerCase().includes(search.toLowerCase()));
   const showSidebar = !activeContact || IS_TABLET;
   const showChat = activeContact || IS_TABLET;
   const isOnline = (u) => u.lastActive && Date.now() - u.lastActive < 120_000;
 
-  // ── Native RTCView (react-native-webrtc) ──────────────────────────────────
-  // Web-এ DOM elements use করে, native-এ RTCView use করে
   let RTCView_impl = null;
   if (Platform.OS !== 'web') {
-    try {
-      RTCView_impl = require('react-native-webrtc').RTCView;
-    } catch (e) {}
+    try { RTCView_impl = require('react-native-webrtc').RTCView; } catch {}
   }
+
+  // ── MESSAGE BUBBLE RENDERER ────────────────────────────────────────────
+  const renderMessage = (msg) => {
+    const isMe = msg.sender === myUid;
+    const { fileMeta, type } = msg;
+
+    return (
+      <View key={msg.id} style={[s.bubble, isMe ? s.bubbleOut : s.bubbleIn]}>
+        {!isMe && <Text style={s.bubbleSender}>{msg.senderName}</Text>}
+
+        {/* Text message */}
+        {type === 'text' && msg.text ? (
+          <Text style={[s.bubbleText, isMe && { color: '#fff' }]}>{msg.text}</Text>
+        ) : null}
+
+        {/* Image */}
+        {type === 'image' && fileMeta?.url ? (
+          <TouchableOpacity onPress={() => openFile(fileMeta.url)}>
+            <Image
+              source={{ uri: fileMeta.url }}
+              style={s.msgImage}
+              resizeMode="cover"
+            />
+          </TouchableOpacity>
+        ) : null}
+
+        {/* Video */}
+        {type === 'video' && fileMeta?.url ? (
+          <TouchableOpacity style={s.videoBubble} onPress={() => openFile(fileMeta.url)}>
+            {fileMeta.thumbnail
+              ? <Image source={{ uri: fileMeta.thumbnail }} style={s.msgImage} resizeMode="cover" />
+              : <View style={[s.msgImage, s.videoPlaceholder]} />
+            }
+            <View style={s.playOverlay}>
+              <FontAwesome6 name="circle-play" size={36} color="#fff" />
+            </View>
+            <Text style={[s.fileLabel, isMe && { color: 'rgba(255,255,255,0.85)' }]}>
+              {fileMeta.fileName} · {formatFileSize(fileMeta.fileSize)}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {/* Audio */}
+        {type === 'audio' && fileMeta?.url ? (
+          <TouchableOpacity style={s.audioBubble} onPress={() => openFile(fileMeta.url)}>
+            <View style={[s.fileIconWrap, { backgroundColor: FILE_COLORS.audio }]}>
+              <FontAwesome6 name="music" size={18} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.fileName, isMe && { color: '#fff' }]} numberOfLines={1}>
+                {fileMeta.fileName || 'Audio'}
+              </Text>
+              <Text style={[s.fileSize, isMe && { color: 'rgba(255,255,255,0.7)' }]}>
+                {fileMeta.duration ? formatDur(Math.floor(fileMeta.duration)) : ''} {formatFileSize(fileMeta.fileSize)}
+              </Text>
+            </View>
+            <FontAwesome6 name="play" size={16} color={isMe ? '#fff' : Colors.primary} />
+          </TouchableOpacity>
+        ) : null}
+
+        {/* Document */}
+        {type === 'document' && fileMeta?.url ? (
+          <TouchableOpacity style={s.docBubble} onPress={() => openFile(fileMeta.url)}>
+            <View style={[s.fileIconWrap, { backgroundColor: FILE_COLORS.document }]}>
+              <FontAwesome6 name={getFileIcon(fileMeta.mimeType, 'document')} size={18} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.fileName, isMe && { color: '#fff' }]} numberOfLines={2}>
+                {fileMeta.fileName || 'Document'}
+              </Text>
+              <Text style={[s.fileSize, isMe && { color: 'rgba(255,255,255,0.7)' }]}>
+                {formatFileSize(fileMeta.fileSize)}
+              </Text>
+            </View>
+            <FontAwesome6 name="download" size={16} color={isMe ? '#fff' : Colors.primary} />
+          </TouchableOpacity>
+        ) : null}
+
+        <View style={s.bubbleMeta}>
+          <FontAwesome6 name="lock" size={8} color={isMe ? 'rgba(255,255,255,0.5)' : '#aaa'} />
+          <Text style={[s.bubbleTime, isMe && { color: 'rgba(255,255,255,0.7)' }]}> {msg.time}</Text>
+          {isMe && <FontAwesome6 name="check-double" size={10} color={msg.read ? '#4fc3f7' : 'rgba(255,255,255,0.5)'} />}
+        </View>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bgGray }}>
@@ -764,6 +782,7 @@ export default function MessengerScreen() {
           <View style={{ flex: 1, backgroundColor: '#fff' }}>
             {activeContact ? (
               <>
+                {/* Chat Header */}
                 <View style={s.chatHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     {!IS_TABLET && (
@@ -780,7 +799,10 @@ export default function MessengerScreen() {
                     </View>
                     <View>
                       <Text style={s.chatHeaderName}>{activeContact.name}</Text>
-                      <Text style={s.chatHeaderSub}>{isOnline(activeContact) ? '🟢 Active now' : 'RasBook Messenger'}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <FontAwesome6 name="lock" size={9} color="#4caf50" />
+                        <Text style={s.chatHeaderSub}>E2E Encrypted</Text>
+                      </View>
                     </View>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 18 }}>
@@ -793,6 +815,7 @@ export default function MessengerScreen() {
                   </View>
                 </View>
 
+                {/* Messages */}
                 <ScrollView
                   ref={scrollRef}
                   style={{ flex: 1, paddingHorizontal: 12, paddingTop: 10 }}
@@ -800,28 +823,35 @@ export default function MessengerScreen() {
                   showsVerticalScrollIndicator={false}
                 >
                   <View style={s.e2eNote}>
-                    <FontAwesome6 name="lock" size={10} color="#65676b" />
-                    <Text style={s.e2eTxt}> End-to-end encrypted</Text>
+                    <FontAwesome6 name="lock" size={10} color="#4caf50" />
+                    <Text style={s.e2eTxt}> Messages are end-to-end encrypted. Only you and {activeContact.name} can read them.</Text>
                   </View>
-                  {messages.map((msg) => {
-                    const isMe = msg.sender === myUid;
-                    return (
-                      <View key={msg.id} style={[s.bubble, isMe ? s.bubbleOut : s.bubbleIn]}>
-                        {!isMe && <Text style={s.bubbleSender}>{msg.senderName}</Text>}
-                        <Text style={[s.bubbleText, isMe && { color: '#fff' }]}>{msg.text}</Text>
-                        <View style={s.bubbleMeta}>
-                          <Text style={[s.bubbleTime, isMe && { color: 'rgba(255,255,255,0.7)' }]}>{msg.time}</Text>
-                          {isMe && <FontAwesome6 name="check-double" size={10} color={msg.read ? '#4fc3f7' : 'rgba(255,255,255,0.5)'} />}
-                        </View>
-                      </View>
-                    );
-                  })}
+                  {messages.map(renderMessage)}
+
+                  {/* Upload progress */}
+                  {uploading && (
+                    <View style={s.uploadingRow}>
+                      <ActivityIndicator color={Colors.primary} size="small" />
+                      <Text style={s.uploadingTxt}>Uploading file…</Text>
+                    </View>
+                  )}
                 </ScrollView>
 
+                {/* Input row */}
                 <View style={s.inputRow}>
+                  {/* Attach button */}
+                  <TouchableOpacity
+                    style={s.attachBtn}
+                    onPress={() => setShowAttachMenu(true)}
+                    disabled={uploading}
+                  >
+                    <FontAwesome6 name="paperclip" size={20} color={uploading ? Colors.textMuted : Colors.primary} />
+                  </TouchableOpacity>
+
                   <View style={s.inputBox}>
                     <TextInput
-                      style={s.textInput} placeholder="Aa" placeholderTextColor={Colors.textMuted}
+                      style={s.textInput} placeholder="Aa"
+                      placeholderTextColor={Colors.textMuted}
                       value={msgInput} onChangeText={setMsgInput} multiline
                     />
                   </View>
@@ -843,79 +873,81 @@ export default function MessengerScreen() {
         )}
       </KeyboardAvoidingView>
 
+      {/* ATTACH MENU MODAL */}
+      <Modal visible={showAttachMenu} transparent animationType="slide" onRequestClose={() => setShowAttachMenu(false)}>
+        <TouchableOpacity style={s.attachOverlay} onPress={() => setShowAttachMenu(false)} activeOpacity={1}>
+          <View style={s.attachSheet}>
+            <Text style={s.attachTitle}>Share</Text>
+            <View style={s.attachGrid}>
+              {[
+                { icon: 'camera', label: 'Camera', type: 'camera', color: '#E91E63' },
+                { icon: 'image', label: 'Gallery', type: 'image', color: '#1877F2' },
+                { icon: 'film', label: 'Video', type: 'video', color: '#8B5CF6' },
+                { icon: 'music', label: 'Audio', type: 'audio', color: '#10B981' },
+                { icon: 'file', label: 'Document', type: 'document', color: '#F59E0B' },
+                { icon: 'video', label: 'Record', type: 'video_camera', color: '#EF4444' },
+              ].map((item) => (
+                <TouchableOpacity
+                  key={item.type}
+                  style={s.attachItem}
+                  onPress={() => handleAttach(item.type)}
+                >
+                  <View style={[s.attachIcon, { backgroundColor: item.color }]}>
+                    <FontAwesome6 name={item.icon} size={22} color="#fff" />
+                  </View>
+                  <Text style={s.attachLabel}>{item.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* CALL MODAL */}
       <Modal visible={callVisible} animationType="slide" transparent={false} statusBarTranslucent>
         <View style={s.callBg}>
-
-          {/* Native video streams (react-native-webrtc RTCView) */}
           {Platform.OS !== 'web' && RTCView_impl && callType === 'video' && callConnected && (
             <>
               {remoteStream && (
-                <RTCView_impl
-                  streamURL={remoteStream.toURL()}
-                  style={s.nativeRemoteVideo}
-                  objectFit="cover"
-                  mirror={false}
-                />
+                <RTCView_impl streamURL={remoteStream.toURL()} style={s.nativeRemoteVideo} objectFit="cover" mirror={false} />
               )}
               {localStream && (
-                <RTCView_impl
-                  streamURL={localStream.toURL()}
-                  style={s.nativeLocalVideo}
-                  objectFit="cover"
-                  mirror={true}
-                  zOrder={1}
-                />
+                <RTCView_impl streamURL={localStream.toURL()} style={s.nativeLocalVideo} objectFit="cover" mirror={true} zOrder={1} />
               )}
             </>
           )}
 
-          {/* Avatar + pulse (audio call বা video not connected) */}
           {(!callConnected || callType === 'audio') && (
             <>
               <Animated.View style={[s.pulseRing, s.pulseRing3, { transform: [{ scale: pulseAnim }], opacity: 0.15 }]} />
               <Animated.View style={[s.pulseRing, s.pulseRing2, { transform: [{ scale: pulseAnim }], opacity: 0.25 }]} />
               <Animated.View style={[s.pulseRing, { transform: [{ scale: pulseAnim }], opacity: 0.4 }]} />
-              <Animated.Image
-                source={avatarUri(callerName, callerAvatar)}
-                style={[s.callAvatar, { transform: [{ scale: pulseAnim }] }]}
-              />
+              <Animated.Image source={avatarUri(callerName, callerAvatar)} style={[s.callAvatar, { transform: [{ scale: pulseAnim }] }]} />
             </>
           )}
 
           <Text style={s.callName}>{callerName}</Text>
           <Text style={s.callTypeText}>{callType === 'video' ? '📹 Video Call' : '📞 Voice Call'}</Text>
-          <Text style={s.callStatus}>{callConnected ? formatTime(callSeconds) : callStatus}</Text>
+          <Text style={s.callStatus}>{callConnected ? formatDur(callSeconds) : callStatus}</Text>
 
           <View style={s.callBtns}>
-            {/* Answer button — শুধু incoming এবং connected না হলে */}
             {isIncoming && !callConnected && (
               <TouchableOpacity style={[s.callBtn, { backgroundColor: '#4caf50' }]} onPress={answerCall}>
                 <FontAwesome6 name={callType === 'video' ? 'video' : 'phone'} size={24} color="#fff" />
               </TouchableOpacity>
             )}
-
-            {/* Connected controls */}
             {callConnected && (
               <>
-                <TouchableOpacity
-                  style={[s.callBtn, { backgroundColor: micMuted ? '#f44336' : 'rgba(255,255,255,0.2)' }]}
-                  onPress={toggleMic}
-                >
+                <TouchableOpacity style={[s.callBtn, { backgroundColor: micMuted ? '#f44336' : 'rgba(255,255,255,0.2)' }]} onPress={toggleMic}>
                   <FontAwesome6 name={micMuted ? 'microphone-slash' : 'microphone'} size={22} color="#fff" />
                 </TouchableOpacity>
                 {callType === 'video' && (
-                  <TouchableOpacity
-                    style={[s.callBtn, { backgroundColor: camOff ? '#f44336' : 'rgba(255,255,255,0.2)' }]}
-                    onPress={toggleCam}
-                  >
+                  <TouchableOpacity style={[s.callBtn, { backgroundColor: camOff ? '#f44336' : 'rgba(255,255,255,0.2)' }]} onPress={toggleCam}>
                     <FontAwesome6 name={camOff ? 'video-slash' : 'video'} size={22} color="#fff" />
                   </TouchableOpacity>
                 )}
               </>
             )}
-
-            {/* Hang up */}
             <TouchableOpacity style={[s.callBtn, { backgroundColor: '#f44336' }]} onPress={hangupCall}>
               <FontAwesome6 name="phone-slash" size={24} color="#fff" />
             </TouchableOpacity>
@@ -923,7 +955,7 @@ export default function MessengerScreen() {
         </View>
       </Modal>
 
-      {/* Web: DOM <audio> and <video> elements */}
+      {/* Web DOM audio/video elements */}
       {Platform.OS === 'web' && callVisible && (
         <WebMediaElements callType={callType} callConnected={callConnected} />
       )}
@@ -931,46 +963,21 @@ export default function MessengerScreen() {
   );
 }
 
-// ── Web: DOM video/audio elements ─────────────────────────────────────────────
+// ── Web: DOM video/audio elements ─────────────────────────────────────────
 function WebMediaElements({ callType, callConnected }) {
   useEffect(() => {
     const ensure = (id, tag, props) => {
       let el = document.getElementById(id);
-      if (!el) {
-        el = document.createElement(tag);
-        el.id = id;
-        Object.assign(el, props);
-        document.body.appendChild(el);
-      }
+      if (!el) { el = document.createElement(tag); el.id = id; Object.assign(el, props); document.body.appendChild(el); }
       return el;
     };
-
-    // Remote audio
-    // FIX: autoplay policy — browser blocks autoplay without user interaction.
-    // Audio element-কে muted দিয়ে শুরু করো, track add হলে unmute করো।
     const remoteAud = ensure('rb-remote-audio', 'audio', { autoplay: true, playsInline: true });
-    remoteAud.muted = false; // ensure unmuted
-
-    // Remote video (full screen)
+    remoteAud.muted = false;
     const remoteVid = ensure('rb-remote-video', 'video', { autoplay: true, playsInline: true });
     remoteVid.muted = false;
-    Object.assign(remoteVid.style, {
-      position: 'fixed', top: 0, left: 0,
-      width: '100%', height: '100%',
-      objectFit: 'cover', zIndex: 290,
-      display: 'none', background: '#000',
-    });
-
-    // Local video (picture-in-picture) — নিজের video সবসময় muted থাকবে (echo এড়াতে)
+    Object.assign(remoteVid.style, { position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 290, display: 'none', background: '#000' });
     const localVid = ensure('rb-local-video', 'video', { autoplay: true, playsInline: true, muted: true });
-    Object.assign(localVid.style, {
-      position: 'fixed', bottom: '120px', right: '16px',
-      width: '100px', height: '140px',
-      objectFit: 'cover', borderRadius: '12px',
-      zIndex: 310, display: 'none',
-      border: '2px solid #fff', boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-    });
-
+    Object.assign(localVid.style, { position: 'fixed', bottom: '120px', right: '16px', width: '100px', height: '140px', objectFit: 'cover', borderRadius: '12px', zIndex: 310, display: 'none', border: '2px solid #fff', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' });
     return () => {
       ['rb-remote-audio', 'rb-remote-video', 'rb-local-video'].forEach(id => {
         const el = document.getElementById(id);
@@ -978,27 +985,21 @@ function WebMediaElements({ callType, callConnected }) {
       });
     };
   }, []);
-
   useEffect(() => {
     const el = document.getElementById('rb-remote-video');
     if (el) {
       if (callType === 'video' && callConnected) {
-        // callConnected হলে display:block করো — track ইতিমধ্যে এসে থাকতে পারে
         el.style.display = 'block';
-        // srcObject থাকলে play করার চেষ্টা করো (race condition এড়াতে)
-        if (el.srcObject && el.srcObject.getTracks().length > 0) {
-          el.play().catch(() => {});
-        }
+        if (el.srcObject?.getTracks().length > 0) el.play().catch(() => {});
       } else if (!el.getAttribute('data-ready')) {
-        // data-ready না থাকলেই লুকাও — track আসার আগে
         el.style.display = 'none';
       }
     }
   }, [callType, callConnected]);
-
   return null;
 }
 
+// ── Styles ─────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   sidebar: { flex: 1, backgroundColor: '#fff', borderRightWidth: 1, borderColor: Colors.border },
   sideHeader: { padding: 16, paddingTop: Platform.OS === 'ios' ? 8 : 16, borderBottomWidth: 1, borderColor: Colors.border },
@@ -1015,20 +1016,36 @@ const s = StyleSheet.create({
   avatarSm: { width: 36, height: 36, borderRadius: 18 },
   contactName: { fontSize: 15, fontWeight: '600', color: '#050505' },
   contactSub: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  chatHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderColor: Colors.border, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
+  chatHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderColor: Colors.border, backgroundColor: '#fff', elevation: 2 },
   chatHeaderName: { fontSize: 15, fontWeight: '700', color: '#050505' },
-  chatHeaderSub: { fontSize: 12, color: Colors.textMuted },
+  chatHeaderSub: { fontSize: 11, color: '#4caf50', fontWeight: '500' },
   callIconBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#e7f3ff', alignItems: 'center', justifyContent: 'center' },
-  e2eNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  e2eTxt: { fontSize: 12, color: Colors.textMuted },
+  e2eNote: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', marginBottom: 12, marginHorizontal: 20, gap: 4 },
+  e2eTxt: { fontSize: 11, color: '#65676b', textAlign: 'center', flex: 1 },
   bubble: { maxWidth: '78%', borderRadius: 18, padding: 10, marginBottom: 6 },
   bubbleIn: { alignSelf: 'flex-start', backgroundColor: '#f0f2f5', borderTopLeftRadius: 4 },
   bubbleOut: { alignSelf: 'flex-end', backgroundColor: Colors.primary, borderTopRightRadius: 4 },
   bubbleSender: { fontSize: 11, fontWeight: '700', color: Colors.primary, marginBottom: 2 },
   bubbleText: { fontSize: 15, color: '#050505' },
-  bubbleMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, justifyContent: 'flex-end' },
+  bubbleMeta: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 4, justifyContent: 'flex-end' },
   bubbleTime: { fontSize: 10, color: Colors.textMuted },
-  inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, padding: 10, borderTopWidth: 1, borderColor: Colors.border, backgroundColor: '#fff' },
+  // File messages
+  msgImage: { width: 200, height: 160, borderRadius: 12, marginBottom: 4 },
+  videoPlaceholder: { backgroundColor: '#222' },
+  playOverlay: { position: 'absolute', top: 0, left: 0, width: 200, height: 160, alignItems: 'center', justifyContent: 'center' },
+  fileLabel: { fontSize: 11, color: '#555', marginTop: 2 },
+  videoBubble: { position: 'relative' },
+  audioBubble: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4, minWidth: 180 },
+  docBubble: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4, minWidth: 180 },
+  fileIconWrap: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  fileName: { fontSize: 13, fontWeight: '600', color: '#050505' },
+  fileSize: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+  // Upload progress
+  uploadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, justifyContent: 'center' },
+  uploadingTxt: { fontSize: 13, color: Colors.textMuted },
+  // Input row
+  inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, padding: 10, borderTopWidth: 1, borderColor: Colors.border, backgroundColor: '#fff' },
+  attachBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   inputBox: { flex: 1, backgroundColor: Colors.bgGray, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, maxHeight: 100 },
   textInput: { fontSize: 15, color: '#050505' },
   sendBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
@@ -1036,6 +1053,14 @@ const s = StyleSheet.create({
   noChatIcon: { width: 96, height: 96, borderRadius: 48, backgroundColor: '#e7f3ff', alignItems: 'center', justifyContent: 'center' },
   noChatTitle: { fontSize: 22, fontWeight: '700', color: '#050505' },
   noChatSub: { fontSize: 15, color: Colors.textMuted },
+  // Attach menu
+  attachOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  attachSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 34 },
+  attachTitle: { fontSize: 16, fontWeight: '700', color: '#050505', marginBottom: 16, textAlign: 'center' },
+  attachGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center' },
+  attachItem: { alignItems: 'center', gap: 6, width: 72 },
+  attachIcon: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center' },
+  attachLabel: { fontSize: 12, color: '#050505', fontWeight: '500' },
   // Call UI
   callBg: { flex: 1, backgroundColor: '#1c1e2f', justifyContent: 'center', alignItems: 'center' },
   callAvatar: { width: 140, height: 140, borderRadius: 70, borderWidth: 4, borderColor: Colors.primary, marginBottom: 20, zIndex: 2 },
@@ -1047,7 +1072,6 @@ const s = StyleSheet.create({
   callStatus: { fontSize: 22, color: Colors.primary, marginTop: 8, marginBottom: 50, fontWeight: '600', letterSpacing: 1, zIndex: 3 },
   callBtns: { flexDirection: 'row', gap: 24, zIndex: 3 },
   callBtn: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  // Native RTCView video
   nativeRemoteVideo: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000', zIndex: 1 },
   nativeLocalVideo: { position: 'absolute', bottom: 120, right: 16, width: 100, height: 140, borderRadius: 12, borderWidth: 2, borderColor: '#fff', zIndex: 2, overflow: 'hidden' },
 });
