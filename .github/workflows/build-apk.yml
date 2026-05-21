@@ -10,38 +10,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout ──────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Node.js ───────────────────────────────────────────────
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.11.0'
 
-      # ── 3. Java (JDK 17) ─────────────────────────────────────────
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # ── 4. Install dependencies ───────────────────────────────────
       - name: Install npm dependencies
         run: npm install
 
-      # ── 5. Generate native android folder (Expo prebuild) ────────
+      # custom plugin CommonJS হওয়া দরকার — চেক করো
+      - name: Verify custom plugin exists
+        run: |
+          ls plugins/
+          node -e "require('./plugins/withCallKeep'); console.log('Plugin OK')"
+
       - name: Expo Prebuild (generate android folder)
         run: npx expo prebuild --platform android --no-install
         env:
           EXPO_NO_TELEMETRY: 1
 
-      # ── 6. Make gradlew executable ────────────────────────────────
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # ── 7. Cache Gradle ──────────────────────────────────────────
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -52,14 +51,12 @@ jobs:
           restore-keys: |
             gradle-
 
-      # ── 8. Build APK ─────────────────────────────────────────────
       - name: Build Release APK
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -Dorg.gradle.daemon=false"
 
-      # ── 9. Upload APK as artifact ─────────────────────────────────
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

@@ -11,9 +11,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.rasbook.app",
@@ -74,16 +72,7 @@
       ],
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
-      [
-        "react-native-callkeep",
-        {
-          "foregroundService": {
-            "channelId": "rasbook_call",
-            "channelName": "RasBook Calls",
-            "notificationTitle": "RasBook call in progress"
-          }
-        }
-      ],
+      "./plugins/withCallKeep",
       "react-native-webrtc",
       [
         "expo-camera",

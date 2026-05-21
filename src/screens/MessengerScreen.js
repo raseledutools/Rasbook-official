@@ -475,16 +475,15 @@ export default function MessengerScreen({ route }) {
       return await mediaDevices_impl.getUserMedia(constraints);
     } catch (err) {
       console.warn('[RasBook] getUserMedia error:', err);
-      // FIX: video call-এ camera fail হলে user-কে জানাও
-      // audio-only fallback দিলে video call-এ video আসে না — তাই null return করি
+      // VIDEO CALL FIX: video call-এ camera fail হলে চুপ করে audio দিও না
+      // user জানুক video নেই, audio-only দিয়ে চালু হচ্ছে
       if (type === 'video') {
         try {
-          // Camera নেই বা deny — audio-only দিয়ে চেষ্টা করো এবং user-কে জানাও
           const audioOnlyStream = await mediaDevices_impl.getUserMedia({ audio: true, video: false });
           if (Platform.OS === 'web') {
-            alert('Camera access denied or unavailable. Starting audio-only call.');
+            alert('⚠️ Camera unavailable — starting audio-only call.');
           } else {
-            Alert.alert('Camera Unavailable', 'Camera access denied or unavailable. Starting audio-only call.');
+            Alert.alert('Camera Unavailable', 'Camera could not be accessed. Starting audio-only call.');
           }
           return audioOnlyStream;
         } catch (e2) {
@@ -496,7 +495,6 @@ export default function MessengerScreen({ route }) {
           return null;
         }
       }
-      // audio call — mic fail
       try { return await mediaDevices_impl.getUserMedia({ audio: true, video: false }); }
       catch (e2) {
         if (Platform.OS === 'web') {
@@ -943,7 +941,7 @@ export default function MessengerScreen({ route }) {
       {/* CALL MODAL */}
       <Modal visible={callVisible} animationType="slide" transparent={false} statusBarTranslucent>
         <View style={s.callBg}>
-          {/* FIX: callConnected শর্ত সরানো হয়েছে — stream ready হলেই দেখাও */}
+          {/* VIDEO FIX: callConnected condition সরানো — stream ready হলেই দেখাও */}
           {Platform.OS !== 'web' && RTCView_impl && callType === 'video' && (
             <>
               {remoteStream && (
