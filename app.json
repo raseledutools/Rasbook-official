@@ -74,6 +74,25 @@
             "deploymentTarget": "13.4"
           }
         }
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
+      [
+        "react-native-callkeep",
+        {
+          "foregroundService": {
+            "channelId": "rasbook_call",
+            "channelName": "RasBook Calls",
+            "notificationTitle": "RasBook call in progress"
+          }
+        }
+      ],
+      "react-native-webrtc",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "RasBook needs camera access for video calls."
+        }
       ]
     ],
     "extra": {

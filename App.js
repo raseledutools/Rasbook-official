@@ -3,7 +3,9 @@ import React, { useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { View, ActivityIndicator, Platform } from 'react-native';
+import { View, ActivityIndicator, Platform, Text } from 'react-native';
+import { useFonts } from 'expo-font';
+import { FontAwesome6 } from '@expo/vector-icons';
 
 import { AuthProvider, useAuth } from './src/hooks/useAuth';
 import ErrorBoundary from './src/components/ErrorBoundary';
@@ -29,8 +31,13 @@ function RootApp() {
   const fcmUnsubRef = useRef(null);
   const callKeepUnsubRef = useRef(null);
 
-  // ── Pending call data — CallKeep answer করার সময় সাথে রাখো ─────────────
-  // FCM message থেকে callId + callerUid আসে, CallKeep answer-এ pass করো
+  // ── FIX 1: @expo/vector-icons font preload ─────────────────────────────
+  // Web-এ FontAwesome6 font আগে load না হলে icon rectangle দেখায়
+  const [fontsLoaded] = useFonts({
+    ...FontAwesome6.font,
+  });
+
+  // Pending call data — CallKeep answer করার সময় সাথে রাখো
   const pendingCallRef = useRef(null); // { callId, callerUid, callerName }
 
   useEffect(() => {
@@ -44,13 +51,11 @@ function RootApp() {
     fcmUnsubRef.current = _msg().onMessage(async (remoteMessage) => {
         const data = remoteMessage?.data;
         if (data?.type === 'incoming_call') {
-          // callId + callerUid save করো — answer করলে Messenger-এ pass হবে
           pendingCallRef.current = {
             callId: data.callId,
             callerUid: data.callerUid,
             callerName: data.callerName,
           };
-          // Native full-screen call screen
           showIncomingCall(
             data.callerName || 'Unknown',
             data.callId,
@@ -59,11 +64,9 @@ function RootApp() {
         }
       });
 
-      // Background state — notification tap করলে
       _msg().onNotificationOpenedApp((remoteMessage) => {
         const data = remoteMessage?.data;
         if (data?.type === 'incoming_call') {
-          // ✅ FIX: callerUid সহ navigate করো
           navigationRef.current?.navigate('Messenger', {
             incomingCallId: data.callId,
             callerUid: data.callerUid,
@@ -71,7 +74,6 @@ function RootApp() {
         }
       });
 
-      // App killed থেকে open — getInitialNotification দিয়ে check করো
       _msg().getInitialNotification().then((remoteMessage) => {
         if (remoteMessage?.data?.type === 'incoming_call') {
           const d = remoteMessage.data;
@@ -81,16 +83,14 @@ function RootApp() {
               incomingCallId: d.callId,
               callerUid: d.callerUid,
             });
-          }, 1000); // navigation ready হওয়ার জন্য delay
+          }, 1000);
         }
       }).catch(() => {});
     } catch(_fcmErr) { console.warn('[FCM] setup failed:', _fcmErr?.message); }
 
     // 3. CallKeep answer/reject listener
-    // ✅ FIX: answer করলে pendingCallRef থেকে callerUid নিয়ে navigate করো
     callKeepUnsubRef.current = registerCallKeepListeners(
       (callUUID) => {
-        // Answer — Messenger screen খোলো + caller contact খুঁজে show করো
         const pending = pendingCallRef.current;
         navigationRef.current?.navigate('Messenger', {
           incomingCallId: callUUID || pending?.callId,
@@ -123,6 +123,15 @@ function RootApp() {
       notifResponseRef.current?.remove?.();
     };
   }, [user]);
+
+  // ── FIX 1: Font load না হলে blank screen দেখাও (rectangle এড়াতে) ──────
+  if (!fontsLoaded) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   if (loading) return (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
