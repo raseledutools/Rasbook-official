@@ -475,32 +475,13 @@ export default function MessengerScreen({ route }) {
       return await mediaDevices_impl.getUserMedia(constraints);
     } catch (err) {
       console.warn('[RasBook] getUserMedia error:', err);
-      // VIDEO CALL FIX: video call-এ camera fail হলে চুপ করে audio দিও না
-      // user জানুক video নেই, audio-only দিয়ে চালু হচ্ছে
-      if (type === 'video') {
-        try {
-          const audioOnlyStream = await mediaDevices_impl.getUserMedia({ audio: true, video: false });
-          if (Platform.OS === 'web') {
-            alert('⚠️ Camera unavailable — starting audio-only call.');
-          } else {
-            Alert.alert('Camera Unavailable', 'Camera could not be accessed. Starting audio-only call.');
-          }
-          return audioOnlyStream;
-        } catch (e2) {
-          if (Platform.OS === 'web') {
-            alert('Microphone permission denied. Please allow access in browser settings.');
-          } else {
-            Alert.alert('Permission Denied', 'Microphone access required for calls.');
-          }
-          return null;
-        }
-      }
+      // Try audio-only fallback
       try { return await mediaDevices_impl.getUserMedia({ audio: true, video: false }); }
       catch (e2) {
         if (Platform.OS === 'web') {
-          alert('Microphone permission denied. Please allow access in browser settings.');
+          alert('Camera/Microphone permission denied. Please allow access in browser settings.');
         } else {
-          Alert.alert('Permission Denied', 'Microphone access required.');
+          Alert.alert('Permission Denied', 'Camera/Microphone access required.');
         }
         return null;
       }
@@ -941,8 +922,7 @@ export default function MessengerScreen({ route }) {
       {/* CALL MODAL */}
       <Modal visible={callVisible} animationType="slide" transparent={false} statusBarTranslucent>
         <View style={s.callBg}>
-          {/* VIDEO FIX: callConnected condition সরানো — stream ready হলেই দেখাও */}
-          {Platform.OS !== 'web' && RTCView_impl && callType === 'video' && (
+          {Platform.OS !== 'web' && RTCView_impl && callType === 'video' && callConnected && (
             <>
               {remoteStream && (
                 <RTCView_impl streamURL={remoteStream.toURL()} style={s.nativeRemoteVideo} objectFit="cover" mirror={false} />

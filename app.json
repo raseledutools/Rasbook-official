@@ -11,7 +11,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.rasbook.app",
@@ -68,16 +70,6 @@
           "ios": {
             "deploymentTarget": "13.4"
           }
-        }
-      ],
-      "@react-native-firebase/app",
-      "@react-native-firebase/messaging",
-      "./plugins/withCallKeep",
-      "react-native-webrtc",
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "RasBook needs camera access for video calls."
         }
       ]
     ],
