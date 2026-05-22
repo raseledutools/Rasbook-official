@@ -31,24 +31,20 @@
       "package": "com.rasbook.app",
       "googleServicesFile": "./google-services.json",
       "permissions": [
-        "CAMERA",
-        "RECORD_AUDIO",
-        "MODIFY_AUDIO_SETTINGS",
-        "INTERNET",
-        "ACCESS_NETWORK_STATE",
-        "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_MICROPHONE",
-        "FOREGROUND_SERVICE_CAMERA",
-        "RECEIVE_BOOT_COMPLETED",
-        "READ_PHONE_STATE",
-        "MANAGE_OWN_CALLS",
-        "CALL_PHONE",
-        "VIBRATE",
-        "WAKE_LOCK",
-        "USE_FULL_SCREEN_INTENT",
-        "SYSTEM_ALERT_WINDOW"
-      ],
-      "intentFilters": []
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "android.permission.FOREGROUND_SERVICE_CAMERA",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.MANAGE_OWN_CALLS",
+        "android.permission.VIBRATE",
+        "android.permission.WAKE_LOCK"
+      ]
     },
     "web": {
       "favicon": "./src/assets/favicon.png",
@@ -71,7 +67,8 @@
             "deploymentTarget": "13.4"
           }
         }
-      ]
+      ],
+      "./plugins/withCallKeep"
     ],
     "extra": {
       "eas": {

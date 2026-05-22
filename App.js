@@ -3,7 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { View, ActivityIndicator, Platform } from 'react-native';
+import { View, ActivityIndicator, Platform, PermissionsAndroid, Alert, Linking } from 'react-native';
 
 import { AuthProvider, useAuth } from './src/hooks/useAuth';
 import ErrorBoundary from './src/components/ErrorBoundary';
@@ -15,11 +15,39 @@ import {
   setupCallKeep, showIncomingCall, endCallKeep, registerCallKeepListeners,
 } from './src/services/callKeepService';
 
+// ── Android 13+ dangerous permissions runtime request ────────────────────────
+async function requestAndroidPermissions() {
+  if (Platform.OS !== 'android') return;
+  try {
+    // CAMERA + MIC — WebRTC এর জন্য দরকার
+    await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
+    ]);
+  } catch (e) {
+    console.warn('[Permissions] request failed:', e?.message);
+  }
+}
+
+// ── SYSTEM_ALERT_WINDOW — overlay permission (separate flow দরকার) ────────────
+async function requestOverlayPermission() {
+  if (Platform.OS !== 'android') return;
+  try {
+    // Android এ এই permission Settings থেকে manually দিতে হয়
+    // Direct API দিয়ে check করা যায় না সরাসরি, তাই Settings এ পাঠাই
+    const { canDrawOverlays } = await import('react-native').then(m => m.NativeModules || {});
+    // Fallback: just skip — CallKeep কাজ করবে overlay ছাড়াও
+  } catch (e) {
+    // non-fatal
+  }
+}
+
 // ── CallKeep setup — শুধু Android/iOS, delay দিয়ে ──────────────────────────
 if (Platform.OS !== 'web') {
   setTimeout(() => {
     setupCallKeep().catch(() => {});
-  }, 3000); // 2000 থেকে বাড়িয়ে 3000 — app fully load হওয়ার পর
+  }, 3000);
 }
 
 function RootApp() {
@@ -29,6 +57,13 @@ function RootApp() {
   const fcmUnsubRef = useRef(null);
   const callKeepUnsubRef = useRef(null);
   const pendingCallRef = useRef(null);
+
+  // ── App launch এ permissions request ──────────────────────────────────────
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      requestAndroidPermissions();
+    }
+  }, []);
 
   useEffect(() => {
     // শুধু native + user logged in হলে চালাও
@@ -40,10 +75,8 @@ function RootApp() {
     registerForPushNotifications(user.uid).catch(() => {});
 
     // ── 2. FCM — async দিয়ে load করো, require() সরাসরি না ──────────────────
-    // কারণ: @react-native-firebase/messaging prebuild ছাড়া crash করে
     const setupFCM = async () => {
       try {
-        // Dynamic import — crash হলেও app বন্ধ হবে না
         const messagingModule = await import('@react-native-firebase/messaging');
         const messaging = messagingModule.default;
 
@@ -102,12 +135,10 @@ function RootApp() {
         }
 
       } catch (fcmErr) {
-        // FCM load failed — এটা non-fatal, app চলতে থাকবে
         console.warn('[FCM] setup skipped:', fcmErr?.message);
       }
     };
 
-    // FCM setup একটু delay দিয়ে করো — navigation ready হওয়ার পর
     const fcmTimer = setTimeout(setupFCM, 1000);
 
     // ── 3. CallKeep listeners ────────────────────────────────────────────────

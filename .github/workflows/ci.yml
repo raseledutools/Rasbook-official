@@ -160,12 +160,14 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      - name: Enable ABI split in build.gradle
+      - name: Force arm64-v8a only (fixes WebRTC crash on 64-bit phones)
         run: |
           GRADLE_FILE="android/app/build.gradle"
-          if ! grep -q "abiFilters" "$GRADLE_FILE"; then
-            sed -i '/defaultConfig {/a\        ndk {\n            abiFilters "arm64-v8a"\n        }' "$GRADLE_FILE"
-          fi
+          sed -i '/abiFilters/d' "$GRADLE_FILE"
+          sed -i '/ndk {/d' "$GRADLE_FILE"
+          sed -i '/defaultConfig {/a\        ndk {\n            abiFilters "arm64-v8a"\n        }' "$GRADLE_FILE"
+          echo "=== Verifying ==="
+          grep -A 20 "defaultConfig {" "$GRADLE_FILE" | head -25
 
       - name: Build Release APK
         working-directory: android
